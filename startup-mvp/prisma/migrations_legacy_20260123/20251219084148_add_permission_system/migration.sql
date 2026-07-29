@@ -1,0 +1,1 @@
+-- No-op placeholder migration (kept for history compatibility)

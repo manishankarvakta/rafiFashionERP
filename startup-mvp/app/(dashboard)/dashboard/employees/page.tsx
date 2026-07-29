@@ -1,0 +1,228 @@
+import React from "react";
+import { getEmployees, getEmployeeStats } from "./_actions/employee.action";
+import { getEmployeeTypes } from "./types/_actions/employee-type.action";
+import { getDepartments } from "./departments/_actions/department.action";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import Link from "next/link";
+import { FiPlus } from "react-icons/fi";
+import EmployeesListClient from "./_components/employees";
+import SyncBiometricButton from "./_components/sync-biometric-button";
+import PageGuard from "@/components/permissions/page-guard";
+import { auth } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
+
+import ExportButtons from "./_components/export-buttons";
+
+interface EmployeesPageProps {
+  searchParams: Promise<{
+    page?: string;
+    search?: string;
+    tab?: string;
+    employeeTypeId?: string;
+    gender?: string;
+    status?: string;
+    departmentId?: string;
+  }>;
+}
+
+export default async function EmployeesPage({ searchParams }: EmployeesPageProps) {
+  const params = await searchParams;
+  const page = parseInt(params.page || "1");
+  const search = params.search || "";
+  const tab = params.tab || "all";
+  const employeeTypeId = params.employeeTypeId || "all";
+  const gender = params.gender || "all";
+  const statusParam = params.status || "all";
+  const departmentId = params.departmentId || "all";
+
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  const status = tab === "trash" ? "trash" : (statusParam as any);
+  
+  // Check permissions and fetch data concurrently
+  const [result, statsResult, typesResult, departmentsResult, canView, canEdit, canCreate, canMoveToTrash, canDeletePermanently, canViewLedger] = await Promise.all([
+    getEmployees(page, 10, search, status, employeeTypeId, gender, departmentId),
+    getEmployeeStats(),
+    getEmployeeTypes(1, 100, "", "active"),
+    getDepartments(1, 100, "", "active"),
+    userId ? hasPermission(userId, "peoples.employees", "view") : false,
+    userId ? hasPermission(userId, "peoples.employees", "edit") : false,
+    userId ? hasPermission(userId, "peoples.employees", "create") : false,
+    userId ? hasPermission(userId, "peoples.employees", "move-to-trash") : false,
+    userId ? hasPermission(userId, "peoples.employees", "delete-permanently") : false,
+    userId ? hasPermission(userId, "peoples.employees", "ledger") : false,
+  ]);
+
+  // Handle errors
+  if (!result.success) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Employees</h1>
+            <p className="text-sm text-muted-foreground">Manage employees in your system</p>
+          </div>
+        </div>
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">
+            {result.error || "Failed to load employees"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const employeeTypes = typesResult.success && typesResult.employeeTypes ? typesResult.employeeTypes : [];
+
+  return (
+    <PageGuard permissionKey="peoples.employees">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Employees</h1>
+            <p className="text-sm text-muted-foreground">Manage employees in your system</p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-2 flex-wrap items-center">
+              {canEdit && (
+                <SyncBiometricButton />
+              )}
+              {canEdit && (
+                <Button variant="outline" asChild>
+                  <Link href="/dashboard/employees/types">
+                    Employee Types Setup
+                  </Link>
+                </Button>
+              )}
+              {canEdit && (
+                <Button variant="outline" asChild>
+                  <Link href="/dashboard/employees/departments">
+                    Department Setup
+                  </Link>
+                </Button>
+              )}
+              {tab !== "trash" && canCreate && (
+                <Button asChild>
+                  <Link href="/dashboard/employees/add">
+                    <FiPlus className="mr-2 h-4 w-4" />
+                    Add Employee
+                  </Link>
+                </Button>
+              )}
+            </div>
+
+            {/* Summary Stats Row */}
+            {statsResult.success && statsResult.stats && (
+              <div className="flex items-center gap-4 text-xs mt-1 text-muted-foreground font-medium">
+                <div className="flex items-center gap-1">
+                  <span>All Employees:</span>
+                  <span className="font-bold text-foreground bg-muted px-2 py-0.5 rounded-full text-[10px]">
+                    {statsResult.stats.all}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span>Active:</span>
+                  <span className="font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-2 py-0.5 rounded-full text-[10px]">
+                    {statsResult.stats.active}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span>On Duty:</span>
+                  <span className="font-bold text-blue-600 bg-blue-50 dark:bg-blue-950/20 px-2 py-0.5 rounded-full text-[10px]">
+                    {statsResult.stats.onDuty}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <Tabs defaultValue={tab} className="w-full">
+          <div className="flex justify-between items-center flex-wrap gap-4 mb-4">
+            <TabsList>
+              <TabsTrigger value="all" asChild>
+                <Link href="/dashboard/employees?tab=all&page=1">All Employees</Link>
+              </TabsTrigger>
+              <TabsTrigger value="trash" asChild>
+                <Link href="/dashboard/employees?tab=trash&page=1">Trash</Link>
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/dashboard/hr/attendance">
+                  Attendance Sheet
+                </Link>
+              </Button>
+              <ExportButtons
+                filters={{
+                  search,
+                  status,
+                  employeeTypeId,
+                  gender,
+                  departmentId,
+                }}
+              />
+            </div>
+          </div>
+          <TabsContent value="all" className="mt-0">
+            <EmployeesListClient
+              initialEmployees={result.employees || []}
+              initialPagination={result.pagination || {
+                page: 1,
+                limit: 10,
+                total: 0,
+                totalPages: 0,
+              }}
+              initialSearch={search}
+              isTrash={false}
+              userId={userId || undefined}
+              employeeTypes={employeeTypes}
+              employeeTypeId={employeeTypeId}
+              gender={gender}
+              status={statusParam}
+              departments={departmentsResult.success && departmentsResult.departments ? (departmentsResult.departments as any[]) : []}
+              departmentId={departmentId}
+              permissions={{
+                view: canView,
+                edit: canEdit,
+                moveToTrash: canMoveToTrash,
+                deletePermanently: canDeletePermanently,
+                viewLedger: canViewLedger,
+              }}
+            />
+          </TabsContent>
+          <TabsContent value="trash" className="mt-4">
+            <EmployeesListClient
+              initialEmployees={result.employees || []}
+              initialPagination={result.pagination || {
+                page: 1,
+                limit: 10,
+                total: 0,
+                totalPages: 0,
+              }}
+              initialSearch={search}
+              isTrash={true}
+              userId={userId || undefined}
+              employeeTypes={employeeTypes}
+              employeeTypeId={employeeTypeId}
+              gender={gender}
+              status={statusParam}
+              departments={departmentsResult.success && departmentsResult.departments ? (departmentsResult.departments as any[]) : []}
+              departmentId={departmentId}
+              permissions={{
+                view: canView,
+                edit: canEdit,
+                moveToTrash: canMoveToTrash,
+                deletePermanently: canDeletePermanently,
+                viewLedger: canViewLedger,
+              }}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </PageGuard>
+  );
+}
+
