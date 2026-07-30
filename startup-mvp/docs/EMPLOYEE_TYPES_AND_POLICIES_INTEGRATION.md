@@ -26,7 +26,7 @@ erDiagram
 
 ## 2. Database Schema Changes
 
-The following schema updates have been applied in [prisma/schema.prisma](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/prisma/schema.prisma):
+The following schema updates have been applied in [prisma/schema.prisma](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/prisma/schema.prisma):
 
 ### 2.1. The `EmployeeType` Hub Model
 ```prisma
@@ -90,7 +90,7 @@ Unlike global system settings, **Employee Types Setup** has been introduced as a
 👉 **Route Path**: `/dashboard/employees/types`
 
 ### 3.1. Main Page (`page.tsx`)
-Located at [types/page.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/types/page.tsx), it acts as the primary controller:
+Located at [types/page.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/types/page.tsx), it acts as the primary controller:
 *   Checks permissions on the server (`peoples.employees`) for view/edit access.
 *   Queries types from `getEmployeeTypes` action.
 *   Renders `<EmployeeTypeForm>` directly if `action=create` or `action=edit` query params are present.
@@ -111,7 +111,7 @@ Features a data table with:
 To transition successfully from the legacy hardcoded setup to the new database-driven model:
 
 ### 4.1. Legacy Seeding
-We created a seeding script at [prisma/seed-employee-types.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/prisma/seed-employee-types.ts) to seed the 5 legacy categories:
+We created a seeding script at [prisma/seed-employee-types.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/prisma/seed-employee-types.ts) to seed the 5 legacy categories:
 *   Management
 *   Executive
 *   Staff
@@ -139,9 +139,9 @@ npx prisma migrate dev --name add_employee_types_and_policies
 
 To prevent breaking existing modules, reports, or payroll calculation routines that query `employee.type` directly as a string, we implemented a transaction-level sync guard:
 
-1. **Server Actions Guard**: In [employee.action.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/_actions/employee.action.tsx), when `employeeTypeId` is provided during create/update:
+1. **Server Actions Guard**: In [employee.action.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/_actions/employee.action.tsx), when `employeeTypeId` is provided during create/update:
    *   The server action queries the corresponding `EmployeeType` name.
    *   It writes the type name string directly to the legacy `type` field and links `employeeTypeId` in the database transaction.
-2. **Form Auto-Matching**: In [employeeForm.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/_components/employeeForm.tsx), when editing a legacy employee record with a string `type` but no `employeeTypeId`:
+2. **Form Auto-Matching**: In [employeeForm.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/_components/employeeForm.tsx), when editing a legacy employee record with a string `type` but no `employeeTypeId`:
    *   The page automatically fetches the dynamic active types.
    *   It matches the legacy string name to the new ID case-insensitively and updates the form state dynamically.

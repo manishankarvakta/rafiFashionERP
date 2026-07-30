@@ -3,7 +3,7 @@
 We have analyzed the full application database models and routing pages. Below is the mapping of modules and operations, followed by instructions on how to use the generated CSV file.
 
 The CSV file has been created in two locations:
-1. Docs: [full_app_testing_checklist.csv](file:///Users/manishankarvakta/Desktop/APPS/ffERP/docs/test/full_app_testing_checklist.csv)
+1. Docs: [full_app_testing_checklist.csv](file:///Users/manishankarvakta/Desktop/APPS/rafierp/docs/test/full_app_testing_checklist.csv)
 2. Chat Artifacts: [full_app_testing_checklist.csv](file:///Users/manishankarvakta/.gemini/antigravity/brain/401d0171-28c3-4618-98d9-356caa38604d/full_app_testing_checklist.csv)
 
 ---
@@ -101,4 +101,4 @@ Below is a preview of the tests structured in the CSV:
 | **TC-SAL-003** | Sales & POS | POS | Drawer Reconciliation | Open register, sell goods, close register, reconcile cash. |
 | **TC-SET-003** | Settings | Backups | Encrypted Backups | Back up databases/files with GCM encryption and test restore. |
 
-For the full list of 63 detailed test scenarios, open the [full_app_testing_checklist.csv](file:///Users/manishankarvakta/Desktop/APPS/ffERP/docs/test/full_app_testing_checklist.csv) file.
+For the full list of 63 detailed test scenarios, open the [full_app_testing_checklist.csv](file:///Users/manishankarvakta/Desktop/APPS/rafierp/docs/test/full_app_testing_checklist.csv) file.

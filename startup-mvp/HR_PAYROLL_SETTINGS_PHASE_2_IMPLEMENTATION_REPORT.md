@@ -11,12 +11,12 @@ Phase 2 implements a complete, user-friendly administrative dashboard under `/da
 
 ## 2. Files Changed
 ### Existing Files Refactored:
-1. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
+1. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
    - Restructured the client component into a 10-tab administrative layout.
    - Built lists, modals, and CRUD forms with local react states.
    - Built a dynamic employee type policy mapping table.
    - Preserved legacy form configurations and accounts mapping.
-2. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
+2. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
    - Added database update/write CRUD functions for all policy types.
    - Implemented transaction boundaries and strict numerical constraints.
 

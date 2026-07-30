@@ -1,6 +1,6 @@
 # Technical Documentation: Promotional Expiry & Proportional Returns
 
-This document details the architecture, data models, and logic implemented in `ffERP` to support:
+This document details the architecture, data models, and logic implemented in `rafierp` to support:
 1. **Promotional Expiry Controls** for item-level discounts.
 2. **Proportional Discount Allocation** for order-level returns.
 3. **Discount Ledger Adjustments** on sales returns.

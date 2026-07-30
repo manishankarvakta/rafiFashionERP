@@ -120,7 +120,7 @@ The application will be available at [http://localhost:3000](http://localhost:30
 ### File Permissions
 If file uploads fail with permission errors, ensure the `volumes/uploads` directory is writable:
 ```bash
-docker exec -u root fferp-app chown -R nextjs:nodejs /app/uploads
+docker exec -u root rafierp-app chown -R nextjs:nodejs /app/uploads
 ```
 
 ### Database Connection

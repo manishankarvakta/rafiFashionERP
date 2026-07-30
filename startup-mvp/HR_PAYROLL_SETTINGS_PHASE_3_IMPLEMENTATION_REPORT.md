@@ -11,19 +11,19 @@ Phase 3 establishes a robust, type-safe calculation utility layer (`policy-calcu
 
 ## 2. Files Changed
 ### Existing Files Modified:
-1. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
+1. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
    - Added the `previewEmployeePayrollPolicyCalculation` server action to query an employee, their dynamic type, active policies, shift boundaries, and run dry-run calculations.
    - Added the `listEmployeesForPreview` server action to retrieve active employees with code, current salary, employee type, and shift.
-2. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
+2. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
    - Imported the new actions `previewEmployeePayrollPolicyCalculation` and `listEmployeesForPreview`.
    - Restructured the dashboard tab navigation to append the "Calculation Preview" tab.
    - Wired up dropdown selectors and forms for mock parameters (Gross, Check-in, Check-out, OT hours, Late count, Weekend/Holiday flags, other allowances/deductions).
    - Added side-by-side read-only result cards and warning alerts for unassigned shifts/policies.
 
 ### New Files Added:
-1. **[lib/hr-payroll/policy-calculation.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/lib/hr-payroll/policy-calculation.ts)**:
+1. **[lib/hr-payroll/policy-calculation.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/lib/hr-payroll/policy-calculation.ts)**:
    - Creates a reusable, pure service layer implementing all 7 policy equations using standard numbers (no Prisma Decimals returned).
-2. **[scratch/test-policy-calculation.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/scratch/test-policy-calculation.ts)**:
+2. **[scratch/test-policy-calculation.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/scratch/test-policy-calculation.ts)**:
    - Scratch test suite verifying all 8 required calculation and fallback rules.
 
 ---
