@@ -20,7 +20,8 @@ export async function getEmployees(
   status: "active" | "inactive" | "trash" | "all" = "all",
   employeeTypeId?: string,
   gender?: string,
-  departmentId?: string
+  departmentId?: string,
+  designation?: string
 ) {
   try {
     const session = await auth();
@@ -83,15 +84,49 @@ export async function getEmployees(
     if (departmentId && departmentId !== "all") {
       where.departmentId = departmentId;
     }
+    if (designation && designation !== "all") {
+      where.designation = designation;
+    }
 
-    // Get total count
-    const total = await prisma.employee.count({ where });
-
-    // Get employees
-    const employees = await prisma.employee.findMany({
+    // 1. Fetch matching employee IDs and biometric mappings dynamically
+    const allMatching = await prisma.employee.findMany({
       where,
-      skip,
-      take: limit,
+      select: {
+        id: true,
+        deviceMappings: {
+          select: {
+            deviceUserId: true,
+          },
+        },
+      },
+    });
+
+    // 2. Resolve the primary numeric biometric ID for sorting
+    const employeesWithBio = allMatching.map((emp) => {
+      const pins = emp.deviceMappings
+        ?.map((m) => parseInt(m.deviceUserId || ""))
+        .filter((n) => !isNaN(n)) || [];
+      const minPin = pins.length > 0 ? Math.min(...pins) : Infinity;
+
+      return {
+        id: emp.id,
+        minPin,
+      };
+    });
+
+    // 3. Sort globally by primary biometric ID (ascending numeric order)
+    employeesWithBio.sort((a, b) => a.minPin - b.minPin);
+
+    // 4. Calculate total and slice page IDs
+    const total = employeesWithBio.length;
+    const pageSlice = employeesWithBio.slice(skip, skip + limit);
+    const pageIds = pageSlice.map((emp) => emp.id);
+
+    // 5. Query full database details for only the items on this page
+    const fetchedEmployees = await prisma.employee.findMany({
+      where: {
+        id: { in: pageIds },
+      },
       select: {
         id: true,
         name: true,
@@ -166,10 +201,12 @@ export async function getEmployees(
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
     });
+
+    // 6. Map the fetched items back to match the globally sorted order
+    const employees = pageIds
+      .map((id) => fetchedEmployees.find((emp) => emp.id === id))
+      .filter((emp): emp is NonNullable<typeof emp> => !!emp);
 
     const totalPages = Math.ceil(total / limit);
 

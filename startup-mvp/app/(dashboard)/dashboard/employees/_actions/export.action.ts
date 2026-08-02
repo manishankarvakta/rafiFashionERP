@@ -12,6 +12,7 @@ export async function getEmployeesForExport(filters: {
   employeeTypeId?: string;
   gender?: string;
   departmentId?: string;
+  designation?: string;
 }) {
   try {
     const session = await auth();
@@ -60,6 +61,10 @@ export async function getEmployeesForExport(filters: {
       where.departmentId = filters.departmentId;
     }
 
+    if (filters.designation && filters.designation !== "all") {
+      where.designation = filters.designation;
+    }
+
     const employees = await prisma.employee.findMany({
       where,
       include: {
@@ -101,6 +106,7 @@ export async function getAttendancesForExport(filters: {
   employeeTypeId?: string;
   departmentId?: string;
   search?: string;
+  designation?: string;
 }) {
   try {
     const session = await auth();
@@ -134,6 +140,10 @@ export async function getAttendancesForExport(filters: {
 
     if (filters.departmentId && filters.departmentId !== "all") {
       empWhere.departmentId = filters.departmentId;
+    }
+
+    if (filters.designation && filters.designation !== "all") {
+      empWhere.designation = filters.designation;
     }
 
     const matchingEmployees = await prisma.employee.findMany({
