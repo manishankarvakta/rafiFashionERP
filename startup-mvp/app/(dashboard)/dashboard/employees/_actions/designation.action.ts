@@ -24,7 +24,18 @@ export async function getDesignationsByDepartment(departmentId?: string) {
     };
 
     if (departmentId && departmentId !== "all") {
-      where.departmentId = departmentId;
+      const dept = await prisma.department.findUnique({
+        where: { id: departmentId },
+        select: { name: true }
+      });
+      if (dept) {
+        where.OR = [
+          { departmentId: departmentId },
+          { department: { equals: dept.name, mode: "insensitive" } }
+        ];
+      } else {
+        where.departmentId = departmentId;
+      }
     }
 
     const employees = await prisma.employee.findMany({

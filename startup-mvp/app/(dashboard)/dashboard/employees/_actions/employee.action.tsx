@@ -42,51 +42,69 @@ export async function getEmployees(
 
     const skip = (page - 1) * limit;
 
-    // Build where clause for search and status
-    const where: Prisma.EmployeeWhereInput = {};
-    
+    const conditions: Prisma.EmployeeWhereInput[] = [];
+
     // Add search condition
     if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { employeeCode: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
-        {
-          deviceMappings: {
-            some: {
-              deviceUserId: { contains: search, mode: "insensitive" }
+      conditions.push({
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { employeeCode: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+          { phone: { contains: search, mode: "insensitive" } },
+          {
+            deviceMappings: {
+              some: {
+                deviceUserId: { contains: search, mode: "insensitive" }
+              }
             }
           }
-        }
-      ];
+        ]
+      });
     }
 
     // Filter by status
     if (status === "trash") {
-      where.status = "trash";
+      conditions.push({ status: "trash" });
     } else if (status === "active") {
-      where.status = "active";
+      conditions.push({ status: "active" });
     } else if (status === "inactive") {
-      where.status = "inactive";
+      conditions.push({ status: "inactive" });
     } else if (status === "all") {
       // Show all except trash by default
-      where.status = { not: "trash" };
+      conditions.push({ status: { not: "trash" } });
     }
 
     // Filter by type & gender
     if (employeeTypeId && employeeTypeId !== "all") {
-      where.employeeTypeId = employeeTypeId;
+      conditions.push({ employeeTypeId });
     }
     if (gender && gender !== "all") {
-      where.gender = gender;
-    }
-    if (departmentId && departmentId !== "all") {
-      where.departmentId = departmentId;
+      conditions.push({ gender });
     }
     if (designation && designation !== "all") {
-      where.designation = designation;
+      conditions.push({ designation });
     }
+
+    // Filter by department (Dual Matching)
+    if (departmentId && departmentId !== "all") {
+      const dept = await prisma.department.findUnique({
+        where: { id: departmentId },
+        select: { name: true }
+      });
+      if (dept) {
+        conditions.push({
+          OR: [
+            { departmentId: departmentId },
+            { department: { equals: dept.name, mode: "insensitive" } }
+          ]
+        });
+      } else {
+        conditions.push({ departmentId });
+      }
+    }
+
+    const where: Prisma.EmployeeWhereInput = conditions.length > 0 ? { AND: conditions } : {};
 
     // 1. Fetch matching employee IDs and biometric mappings dynamically
     const allMatching = await prisma.employee.findMany({
@@ -170,6 +188,15 @@ export async function getEmployees(
         shiftId: true,
         type: true,
         nominee: true,
+        skills: true,
+        productionLineId: true,
+        productionLine: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          }
+        },
         deviceMappings: {
           select: {
             deviceUserId: true,
@@ -319,6 +346,15 @@ export async function getEmployeeById(employeeId: string) {
         },
         biometricDeviceId: true,
         nominee: true,
+        skills: true,
+        productionLineId: true,
+        productionLine: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          }
+        },
         attendanceLogs: {
           orderBy: {
             timestamp: "desc"
@@ -607,6 +643,8 @@ export async function createEmployee(input: {
   employeeTypeId?: string;
   biometricDeviceId?: string;
   nominee?: any;
+  skills?: string[];
+  productionLineId?: string;
 }) {
   try {
     const session = await auth();
@@ -922,6 +960,8 @@ export async function createEmployee(input: {
           employeeTypeId: input.employeeTypeId || null,
           biometricDeviceId: input.biometricDeviceId || null,
           nominee: input.nominee || null,
+          skills: input.skills || [],
+          productionLineId: input.productionLineId || null,
           salaryPayableAccountId: salaryPayableCOA.id,
           advanceAccountId: advanceCOA?.id || null,
         },
@@ -956,6 +996,15 @@ export async function createEmployee(input: {
           type: true,
           employeeTypeId: true,
           nominee: true,
+          skills: true,
+          productionLineId: true,
+          productionLine: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            }
+          },
           salaryPayableAccount: {
             select: {
               id: true,
@@ -1042,6 +1091,8 @@ export async function updateEmployee(input: {
   employeeTypeId?: string;
   biometricDeviceId?: string;
   nominee?: any;
+  skills?: string[];
+  productionLineId?: string;
 }) {
   try {
     const session = await auth();
@@ -1343,6 +1394,8 @@ export async function updateEmployee(input: {
         photo: input.photo !== undefined ? (input.photo || null) : undefined,
         shiftId: input.shiftId !== undefined ? (input.shiftId || null) : undefined,
         nominee: input.nominee !== undefined ? (input.nominee || null) : undefined,
+        skills: input.skills !== undefined ? input.skills : undefined,
+        productionLineId: input.productionLineId !== undefined ? (input.productionLineId || null) : undefined,
         type: typeName,
         employeeTypeId: input.employeeTypeId !== undefined ? (input.employeeTypeId || null) : undefined,
         biometricDeviceId: input.biometricDeviceId !== undefined ? (input.biometricDeviceId || null) : undefined,
@@ -1391,6 +1444,15 @@ export async function updateEmployee(input: {
           shiftId: true,
           type: true,
           employeeTypeId: true,
+          skills: true,
+          productionLineId: true,
+          productionLine: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            }
+          },
           user: {
             select: {
               id: true,

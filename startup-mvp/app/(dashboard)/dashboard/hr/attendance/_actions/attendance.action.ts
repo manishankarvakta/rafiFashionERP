@@ -288,7 +288,7 @@ export async function getAttendances(startDate: Date, endDate: Date, employeeId?
  * Bulk process attendance for a specific date
  * (e.g., mark everyone who hasn't punched as ABSENT)
  */
-export async function processBulkAttendance(date: string, warehouseId?: string) {
+export async function processBulkAttendance(date: string, productionLineId?: string) {
   const startTime = Date.now();
   try {
     await syncTimezoneFromDb();
@@ -325,10 +325,6 @@ export async function processBulkAttendance(date: string, warehouseId?: string) 
         date: targetDate,
         status: "active",
         isTrash: false,
-        OR: [
-          { warehouseId: null },
-          { warehouseId }
-        ]
       }
     });
 
@@ -347,8 +343,8 @@ export async function processBulkAttendance(date: string, warehouseId?: string) 
       status: "active"
     };
     
-    if (warehouseId) {
-      whereClause.warehouseId = warehouseId;
+    if (productionLineId) {
+      whereClause.productionLineId = productionLineId;
     }
 
     const employees = await prisma.employee.findMany({
@@ -479,7 +475,7 @@ export async function getAttendanceRecordsPaginated({
   page = 1,
   limit = 10,
   search = "",
-  warehouseId,
+  productionLineId,
   deviceId,
   employeeId,
   fromDate,
@@ -489,7 +485,7 @@ export async function getAttendanceRecordsPaginated({
   page?: number;
   limit?: number;
   search?: string;
-  warehouseId?: string;
+  productionLineId?: string;
   deviceId?: string;
   employeeId?: string;
   fromDate?: string;
@@ -514,7 +510,21 @@ export async function getAttendanceRecordsPaginated({
 
     // Filters
     if (employeeId) where.employeeId = employeeId;
-    if (warehouseId && warehouseId !== "all") where.employee = { warehouseId };
+    
+    if (productionLineId && productionLineId !== "all") {
+      if (productionLineId === "none") {
+        where.employee = {
+          ...((where.employee as any) || {}),
+          productionLineId: null
+        };
+      } else {
+        where.employee = {
+          ...((where.employee as any) || {}),
+          productionLineId: productionLineId
+        };
+      }
+    }
+    
     if (status && status !== "ALL") where.status = status as any;
 
     // Search by employee name or code
