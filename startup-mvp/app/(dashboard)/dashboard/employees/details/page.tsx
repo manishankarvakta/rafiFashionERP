@@ -228,6 +228,11 @@ export default async function EmployeeDetailsPage({ searchParams }: EmployeeDeta
                   </div>
 
                   <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Production Line</label>
+                    <p className="text-sm font-medium">{(employee as any).productionLine?.name || "-"}</p>
+                  </div>
+
+                  <div className="space-y-1">
                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Monthly Salary</label>
                     <div className="flex items-center gap-1 text-sm font-semibold text-primary">
                       <span>৳</span>
@@ -271,6 +276,25 @@ export default async function EmployeeDetailsPage({ searchParams }: EmployeeDeta
                     <p className="text-sm font-medium">{(employee as any).biometricDeviceId || "-"}</p>
                   </div>
                 </div>
+              </div>
+
+              {/* Skills & Qualifications Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 border-b pb-2">
+                  <FiBriefcase className="text-primary" />
+                  <h3 className="font-semibold">Skills & Qualifications</h3>
+                </div>
+                {employee.skills && employee.skills.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {employee.skills.map((skill, index) => (
+                      <Badge key={index} variant="secondary" className="px-3 py-1 text-sm bg-muted/60 text-muted-foreground border">
+                        {skill}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No skills added</p>
+                )}
               </div>
 
               {/* Address Section */}

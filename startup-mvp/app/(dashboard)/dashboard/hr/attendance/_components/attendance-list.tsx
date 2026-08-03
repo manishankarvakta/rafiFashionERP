@@ -240,6 +240,7 @@ export default function AttendanceListClient({
               </SelectTrigger>
               <SelectContent className="max-h-[250px]">
                 <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value="ON_DUTY">On Duty (No Out Punch)</SelectItem>
                 <SelectItem value="PRESENT">Present</SelectItem>
                 <SelectItem value="ABSENT">Absent</SelectItem>
                 <SelectItem value="LATE">Late</SelectItem>

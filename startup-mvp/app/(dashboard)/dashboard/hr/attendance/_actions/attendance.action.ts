@@ -274,7 +274,7 @@ export async function getAttendances(startDate: Date, endDate: Date, employeeId?
         employee: { select: { id: true, name: true, employeeCode: true, designation: true } },
         shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
       },
-      orderBy: [{ date: 'desc' }, { employee: { name: 'asc' } }]
+      orderBy: [{ date: 'desc' }, { checkIn: 'desc' }, { employee: { name: 'asc' } }]
     });
 
     return { success: true, attendances };
@@ -525,7 +525,14 @@ export async function getAttendanceRecordsPaginated({
       }
     }
     
-    if (status && status !== "ALL") where.status = status as any;
+    if (status && status !== "ALL") {
+      if (status === "ON_DUTY") {
+        where.checkIn = { not: null };
+        where.checkOut = null;
+      } else {
+        where.status = status as any;
+      }
+    }
 
     // Search by employee name or code
     if (search) {
@@ -549,7 +556,7 @@ export async function getAttendanceRecordsPaginated({
           employee: { select: { id: true, name: true, employeeCode: true, designation: true } },
           shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
         },
-        orderBy: [{ date: 'desc' }, { employee: { name: 'asc' } }],
+        orderBy: [{ date: 'desc' }, { checkIn: 'desc' }, { employee: { name: 'asc' } }],
         skip,
         take: limit,
       })
