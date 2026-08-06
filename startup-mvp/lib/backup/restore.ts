@@ -573,13 +573,18 @@ async function executePgRestore(
 
       const fileStream = fs.createReadStream(dumpPath);
 
-      // We use spawn to execute docker exec -i <container> pg_restore <args>
+      // We use spawn to execute a temporary postgres:17-alpine container running pg_restore,
+      // connecting to the target database container's network namespace. This ensures we have
+      // a modern pg_restore version (17) that can read any newer dump file format version (e.g. 1.16).
       const dockerArgs = [
-        'exec',
+        'run',
+        '--rm',
         '-i',
+        `--network=container:${activeContainer}`,
         '-e', `PGPASSWORD=${config.password}`,
-        activeContainer,
+        'postgres:17-alpine',
         'pg_restore',
+        '-h', 'localhost',
         ...pgArgs
       ];
 
