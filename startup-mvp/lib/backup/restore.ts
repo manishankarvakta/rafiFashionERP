@@ -622,8 +622,21 @@ async function executePgRestore(
           manager.updateProgress(restoreId, { progress: progressEnd });
           resolve();
         } else {
-          // Some warnings are normal during pg_restore, check if we should reject
-          if (stderr.toLowerCase().includes('error:') || stderr.toLowerCase().includes('fatal:')) {
+          // Some warnings are normal during pg_restore, check if we should reject.
+          // Filter out ignorable PG17 -> PG16 session parameter warnings.
+          const lines = stderr.split('\n');
+          const criticalLines = lines.filter(line => {
+            const lowerLine = line.toLowerCase();
+            const isError = lowerLine.includes('error:') || lowerLine.includes('fatal:');
+            if (!isError) return false;
+            
+            // Ignore transaction_timeout errors (introduced in PG17, unsupported on PG16)
+            if (lowerLine.includes('transaction_timeout')) return false;
+            
+            return true;
+          });
+
+          if (criticalLines.length > 0) {
             reject(new Error(`Docker pg_restore failed with code ${code}: ${stderr}`));
           } else {
             console.warn(`Docker pg_restore finished with warning code ${code}: ${stderr}`);
