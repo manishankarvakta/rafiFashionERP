@@ -506,7 +506,14 @@ async function executePgRestore(
   ];
 
   if (cleanDatabase) {
-    pgArgs.push('--clean'); // Drop objects before recreating
+    try {
+      manager.addLog(restoreId, 'Dropping and recreating public schema to ensure a clean database restore...');
+      await prisma.$executeRawUnsafe('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+      manager.addLog(restoreId, 'Public schema cleaned successfully.');
+    } catch (err: any) {
+      manager.addLog(restoreId, `Warning: Failed to drop public schema (${err.message || err}). Falling back to standard pg_restore --clean.`, 'warn');
+      pgArgs.push('--clean'); // Fallback to dropping objects one by one
+    }
   }
 
   // Check if pg_restore is available on the host
