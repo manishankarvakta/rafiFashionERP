@@ -24,6 +24,7 @@ import {
   FiTrendingDown,
 } from "react-icons/fi";
 import { format } from "date-fns";
+import PrintHeader, { PrintStyle } from "@/app/(dashboard)/dashboard/procurements/_components/print-header";
 
 interface LedgerItem {
   id: string;
@@ -77,6 +78,12 @@ interface EmployeeLedgerProps {
   summary: LedgerSummary;
   initialStartDate?: string;
   initialEndDate?: string;
+  organization?: {
+    name?: string | null;
+    address?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
 }
 
 export default function EmployeeLedger({
@@ -85,6 +92,7 @@ export default function EmployeeLedger({
   summary,
   initialStartDate = "",
   initialEndDate = "",
+  organization,
 }: EmployeeLedgerProps) {
   const router = useRouter();
   const [startDate, setStartDate] = useState(initialStartDate);
@@ -159,55 +167,25 @@ export default function EmployeeLedger({
 
   return (
     <div className="space-y-6 print:p-0 print:space-y-4">
-      {/* Top Header Actions (hidden on print) */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:hidden">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/employees">
-              <FiArrowLeft className="mr-2 h-4 w-4" />
-              Employees
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/dashboard/employees/details?id=${employee.id}`}>
-              <FiFileText className="mr-2 h-4 w-4" />
-              Employee Details
-            </Link>
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={handlePrint} className="bg-primary hover:bg-primary/90 text-primary-foreground shadow">
-            <FiPrinter className="mr-2 h-4 w-4" />
-            Print Ledger
-          </Button>
-        </div>
-      </div>
+      {/* Print-only: multi-page print fix + page numbering */}
+      <PrintStyle />
 
-      {/* Minimalistic Print Header & Overview (Visible ONLY when printing) */}
-      <div className="hidden print:block space-y-4 mb-6">
-        <div className="flex justify-between items-start border-b pb-3">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight uppercase">Employee Ledger Statement</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Statement Date: {format(new Date(), "dd MMMM yyyy")}
-              {startDate && endDate
-                ? ` | Period: ${format(new Date(startDate), "dd MMM yyyy")} to ${format(new Date(endDate), "dd MMM yyyy")}`
-                : " | Period: All Time"}
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-base font-bold">{employee.name}</div>
-            {employee.employeeCode && (
-              <div className="text-xs font-mono text-muted-foreground">ID: {employee.employeeCode}</div>
-            )}
-            {employee.phone && <div className="text-xs text-muted-foreground">{employee.phone}</div>}
-          </div>
-        </div>
+      {/* Print-only Branded Header */}
+      <PrintHeader
+        docNumber={employee.employeeCode || employee.id.slice(-8).toUpperCase()}
+        docTitle="EMPLOYEE LEDGER STATEMENT"
+        organizationName={organization?.name}
+        organizationAddress={organization?.address}
+        organizationEmail={organization?.email}
+        organizationPhone={organization?.phone}
+      />
 
-        {/* Minimalistic Overview Grid */}
-        <div className="grid grid-cols-2 gap-4 text-xs border rounded-md p-3 bg-muted/20">
-          <div className="space-y-1">
-            <div className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider mb-1">
+      {/* Print-only Summary Section — 2-col: entity details + account overview */}
+      <div className="hidden print:block mb-4">
+        <div className="grid grid-cols-2 text-[11px] border border-gray-300 rounded overflow-hidden">
+          {/* Left: Employee Details */}
+          <div className="p-3 space-y-1 border-r border-gray-300">
+            <div className="font-semibold text-gray-500 uppercase text-[9px] tracking-widest mb-1.5">
               Employee Details
             </div>
             <div>
@@ -237,37 +215,39 @@ export default function EmployeeLedger({
               </div>
             )}
           </div>
-          <div className="space-y-1.5 border-l pl-4">
-            <div className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider mb-1">
+
+          {/* Right: Account Overview Summary */}
+          <div className="p-3 space-y-1">
+            <div className="font-semibold text-gray-500 uppercase text-[9px] tracking-widest mb-1.5">
               Account Overview Summary
             </div>
-            <div className="flex justify-between border-b border-dashed pb-0.5">
-              <span className="text-muted-foreground">Base Salary:</span>
+            <div className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+              <span className="text-gray-600">Base Monthly Salary:</span>
               <span className="font-mono font-medium">
                 ৳{employee.salary.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between border-b border-dashed pb-0.5">
-              <span className="text-muted-foreground">Total Earned / Accrued:</span>
-              <span className="font-mono font-medium text-blue-700">
+            <div className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+              <span className="text-gray-600">Total Earned / Accrued:</span>
+              <span className="font-mono font-semibold text-blue-700">
                 ৳{summary.totalEarned.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between border-b border-dashed pb-0.5">
-              <span className="text-muted-foreground">Total Paid / Disbursed:</span>
-              <span className="font-mono font-medium text-emerald-700">
+            <div className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+              <span className="text-gray-600">Total Paid / Disbursed:</span>
+              <span className="font-mono font-semibold text-emerald-700">
                 ৳{summary.totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between pt-1 font-bold">
-              <span className="uppercase text-[10px]">Net Outstanding Balance:</span>
+            <div className="flex justify-between pt-1">
+              <span className="font-bold uppercase text-[9px] tracking-wide">Net Outstanding Balance:</span>
               <span
-                className={`font-mono text-sm ${
+                className={`font-mono font-black text-sm ${
                   summary.closingBalance > 0
-                    ? "text-amber-700"
+                    ? "text-amber-600"
                     : summary.closingBalance < 0
-                    ? "text-emerald-700"
-                    : "text-slate-800"
+                    ? "text-emerald-600"
+                    : "text-gray-800"
                 }`}
               >
                 ৳{summary.closingBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -276,6 +256,31 @@ export default function EmployeeLedger({
           </div>
         </div>
       </div>
+
+      {/* Top Header Actions (hidden on print) */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:hidden">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/dashboard/employees">
+              <FiArrowLeft className="mr-2 h-4 w-4" />
+              Employees
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/dashboard/employees/details?id=${employee.id}`}>
+              <FiFileText className="mr-2 h-4 w-4" />
+              Employee Details
+            </Link>
+          </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={handlePrint} className="bg-primary hover:bg-primary/90 text-primary-foreground shadow">
+            <FiPrinter className="mr-2 h-4 w-4" />
+            Print Ledger
+          </Button>
+        </div>
+      </div>
+
 
       {/* Employee Overview Header Card (Screen View) */}
       <Card className="border-2 shadow-sm bg-card print:hidden">

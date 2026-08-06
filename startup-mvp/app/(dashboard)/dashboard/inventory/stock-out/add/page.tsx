@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { getWarehouses } from "../../../master/warehouses/_actions/warehouse.action";
 import { getActiveItems } from "../../stock/_actions/stock.action";
 import StockOutForm from "./_components/stock-out-form";

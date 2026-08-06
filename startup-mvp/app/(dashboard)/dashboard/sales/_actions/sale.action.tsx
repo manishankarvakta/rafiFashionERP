@@ -3536,3 +3536,173 @@ export async function getLastSaleForUser() {
     };
   }
 }
+
+/**
+ * Get all sales matching filters for export (no pagination limit)
+ */
+export async function getAllSalesForExport(
+  search: string = "",
+  status: "trash" | "all" = "all",
+  filters?: {
+    billerId?: string;
+    warehouseId?: string;
+    type?: OrderType;
+    startDate?: string;
+    endDate?: string;
+    salesAssistantId?: string;
+  },
+  saleIds?: string[]
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return { success: false, error: "Unauthorized", sales: [] };
+    }
+
+    const canView = await hasPermission(session.user.id, "sales.sales", "view");
+    if (!canView) {
+      return { success: false, error: "You do not have permission to view sales", sales: [] };
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true, defaultWarehouseId: true }
+    });
+
+    const isAdmin = dbUser ? ['admin', 'superadmin'].includes(dbUser.role.toLowerCase()) : false;
+
+    const where: Prisma.SaleWhereInput = {
+      isTrash: status === "trash",
+    };
+
+    if (saleIds && saleIds.length > 0) {
+      where.id = { in: saleIds };
+    } else {
+      if (filters?.billerId && filters.billerId !== "all") {
+        where.createdBy = filters.billerId;
+      }
+      if (filters?.salesAssistantId && filters.salesAssistantId !== "all") {
+        where.salesAssistantId = filters.salesAssistantId;
+      }
+      if (!isAdmin && dbUser?.defaultWarehouseId) {
+        where.warehouseId = dbUser.defaultWarehouseId;
+      } else if (filters?.warehouseId && filters.warehouseId !== "all") {
+        where.warehouseId = filters.warehouseId;
+      }
+      if (filters?.type && (filters.type as string) !== "all") {
+        where.orderType = filters.type;
+      }
+      if (filters?.startDate || filters?.endDate) {
+        where.date = {};
+        if (filters.startDate) {
+          where.date.gte = new Date(filters.startDate);
+        }
+        if (filters.endDate) {
+          where.date.lte = new Date(filters.endDate);
+        }
+      }
+
+      if (search) {
+        where.OR = [
+          { saleNumber: { contains: search, mode: "insensitive" } },
+          { client: { name: { contains: search, mode: "insensitive" } } },
+          { client: { email: { contains: search, mode: "insensitive" } } },
+        ];
+      }
+    }
+
+    const sales = await prisma.sale.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        saleNumber: true,
+        date: true,
+        status: true,
+        orderType: true,
+        subTotal: true,
+        discount: true,
+        deliveryCharge: true,
+        tax: true,
+        grandTotal: true,
+        isTrash: true,
+        notes: true,
+        deliveryStatus: true,
+        courierName: true,
+        trackingNumber: true,
+        paymentDetails: true,
+        _count: {
+          select: {
+            items: true,
+          },
+        },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            company: true,
+          },
+        },
+        warehouse: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        salesAssistant: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const serializedSales = sales.map((sale) => {
+      const details = (sale.paymentDetails as any) || {};
+      const cashAmount = Number(details.cashAmount || 0);
+      const cardAmount = Number(details.cardAmount || 0);
+      const mfsAmount = Number(details.mfsAmount || 0);
+      const changeAmount = Number(details.changeAmount || 0);
+      const totalReceived = cashAmount + cardAmount + mfsAmount;
+
+      return {
+        ...sale,
+        subTotal: Number(sale.subTotal || 0),
+        discount: Number(sale.discount || 0),
+        deliveryCharge: Number(sale.deliveryCharge || 0),
+        tax: Number(sale.tax || 0),
+        grandTotal: Number(sale.grandTotal || 0),
+        cashAmount,
+        cardAmount,
+        mfsAmount,
+        totalReceived,
+        changeAmount,
+      };
+    });
+
+    return { success: true, sales: serializedSales };
+  } catch (error) {
+    console.error("getAllSalesForExport error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch sales for export",
+      sales: [],
+    };
+  }
+}
+
+
+

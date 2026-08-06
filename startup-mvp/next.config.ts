@@ -5,9 +5,9 @@ const allowedOrigins: string[] = [
   'localhost:3000',
   'localhost:3001',
   'localhost:3002',
-  'rafierp.aamardokan.online',
+  'fferp.aamardokan.online',
   'ferrarifashionbd.cloud',
-  'www.rafierp.aamardokan.online',
+  'www.fferp.aamardokan.online',
   'www.ferrarifashionbd.cloud'
 ];
 

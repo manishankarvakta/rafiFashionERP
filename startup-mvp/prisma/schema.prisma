@@ -79,6 +79,8 @@ model User {
   createdWarehouses                Warehouse[]            @relation("WarehouseCreator")
   createdSettings                  Settings[]             @relation("SettingsCreator")
   settings                         Settings[]             @relation("SettingsUser")
+  billerClosingSessions            POSClosingSession[]    @relation("BillerClosingSessions")
+  managerClosingVerifications       POSClosingSession[]    @relation("ManagerClosingVerifications")
   createdMembershipTiers           MembershipTier[]       @relation("MembershipTierCreator")
   rfidBundleScans                  RFIDBundleScan[]
   createdTPNs                      TransferPurchaseNote[] @relation("TPNCreatedBy")
@@ -86,7 +88,6 @@ model User {
   createdGRNs                      GRN[]                  @relation("GRNCreator")
   updatedGRNs                      GRN[]                  @relation("GRNUpdater")
   inventoryDamages                 InventoryDamage[]
-  stockOuts                        StockOut[]
   createdSalaryStructurePolicies   SalaryStructurePolicy[] @relation("SalaryStructurePolicyCreator")
   createdAttendancePolicies        AttendancePolicy[]      @relation("AttendancePolicyCreator")
   createdLatePolicies              LatePolicy[]            @relation("LatePolicyCreator")
@@ -99,7 +100,8 @@ model User {
   approvedFines                    EmployeeFine[]          @relation("FineApprover")
   createdBonuses                   EmployeeBonus[]         @relation("BonusCreator")
   approvedBonuses                  EmployeeBonus[]         @relation("BonusApprover")
-  createdDailyOutputs              EmployeeDailyOutput[]
+  stockOuts                        StockOut[]
+  employeeDailyOutputs             EmployeeDailyOutput[]
 
   @@index([status])
   @@index([designationTemplateId])
@@ -156,10 +158,11 @@ model Employee {
   assistedSales          Sale[]              @relation("SaleSalesAssistant")
   fines                  EmployeeFine[]
   bonuses                EmployeeBonus[]
-  dailyOutputs           EmployeeDailyOutput[]
-  skills                 String[]            @default([])
   productionLineId       String?
   productionLine         ProductionLine?     @relation(fields: [productionLineId], references: [id], onDelete: Restrict)
+  dailyOutputs           EmployeeDailyOutput[]
+  skills                 String[]            @default([])
+
 
   @@index([userId])
   @@index([status])
@@ -170,18 +173,6 @@ model Employee {
   @@index([warehouseId])
   @@index([departmentId])
   @@index([productionLineId])
-}
-
-model ProductionLine {
-  id          String     @id @default(cuid())
-  name        String     @unique
-  code        String     @unique
-  description String?
-  status      String     @default("active")
-  isTrash     Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  employees   Employee[]
 }
 
 model Account {
@@ -423,8 +414,8 @@ model Item {
   tpnItems                       TransferPurchaseNoteItem[]
   grnItems                       GRNItem[]
   inventoryDamageItems           InventoryDamageItem[]
-  stockOutItems                  StockOutItem[]
   inventoryCountEntries          InventoryCountEntry[]
+  stockOutItems                  StockOutItem[]
 
   @@index([code])
   @@index([name])
@@ -455,7 +446,6 @@ model Warehouse {
   employees           Employee[]             @relation("WarehouseEmployees")
   holidays            Holiday[]
   createdDamages      InventoryDamage[]
-  stockOuts           StockOut[]
   InventoryAdjustment InventoryAdjustment[]
   productionOrders    ProductionOrder[]
   purchases           Purchase[]
@@ -475,6 +465,8 @@ model Warehouse {
   vouchers            Voucher[]              @relation("WarehouseVouchers")
   clients             Client[]
   suppliers           Supplier[]
+  posClosingSessions  POSClosingSession[]
+  stockOuts           StockOut[]
 
   @@index([code])
   @@index([name])
@@ -1054,7 +1046,6 @@ model Voucher {
   employeeLoans                 EmployeeLoan[]
   inventoryAdjustment           InventoryAdjustment?
   inventoryDamage               InventoryDamage?
-  stockOut                      StockOut?
   JournalEntry                  JournalEntry[]
   payrollPayment                Payroll?             @relation("PayrollPaymentVoucher")
   payrollAccrual                Payroll?             @relation("PayrollVoucher")
@@ -1071,6 +1062,7 @@ model Voucher {
   VoucherLine                   VoucherLine[]
   returnToVendors               ReturnToVendor[]
   grns                          GRN[]
+  stockOut                      StockOut?
 
   @@index([clientId])
   @@index([createdBy])
@@ -1211,50 +1203,6 @@ model InventoryDamageItem {
   variant           ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@index([inventoryDamageId])
-  @@index([itemId])
-  @@index([variantId])
-}
-
-model StockOut {
-  id            String          @id @default(cuid())
-  stockOutNo    String          @unique
-  warehouseId   String
-  date          DateTime        @default(now())
-  status        StockOutStatus  @default(DRAFT)
-  notes         String?         @db.Text
-  voucherId     String?         @unique
-  isTrash       Boolean         @default(false)
-  createdById   String
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  
-  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
-  createdByUser User            @relation(fields: [createdById], references: [id])
-  voucher       Voucher?        @relation(fields: [voucherId], references: [id])
-  items         StockOutItem[]
-  
-  @@index([warehouseId])
-  @@index([createdById])
-  @@index([voucherId])
-  @@index([isTrash])
-}
-
-model StockOutItem {
-  id            String          @id @default(cuid())
-  stockOutId    String
-  itemId        String
-  variantId     String?
-  quantity      Decimal         @db.Decimal(12, 2)
-  unitRate      Decimal         @db.Decimal(12, 2)
-  amount        Decimal         @db.Decimal(12, 2)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  
-  stockOut      StockOut        @relation(fields: [stockOutId], references: [id], onDelete: Cascade)
-  item          Item            @relation(fields: [itemId], references: [id])
-  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  
-  @@index([stockOutId])
   @@index([itemId])
   @@index([variantId])
 }
@@ -1763,12 +1711,6 @@ enum VoucherType {
   STOCK_OUT
 }
 
-enum StockOutStatus {
-  DRAFT
-  COMPLETED
-  CANCELLED
-}
-
 enum CashBankAccountType {
   CASH
   BANK
@@ -1955,7 +1897,6 @@ model ProductVariant {
   stockLedgers             StockLedger[]
   purchaseItems            PurchaseItem[]
   inventoryDamageItems     InventoryDamageItem[]
-  stockOutItems            StockOutItem[]
   saleItems                SaleItem[]
   clientDiscounts          ClientItemDiscount[]
   createdAt                DateTime                   @default(now())
@@ -1965,6 +1906,7 @@ model ProductVariant {
   grnItems                 GRNItem[]
   inventoryAdjustmentItems InventoryAdjustmentItem[]
   inventoryCountEntries    InventoryCountEntry[]
+  stockOutItems            StockOutItem[]
 
   @@index([itemId])
   @@index([sku])
@@ -2632,29 +2574,159 @@ model MembershipTier {
   creator            User      @relation("MembershipTierCreator", fields: [createdBy], references: [id])
 }
 
-// ============================================
-// EMPLOYEE DAILY PRODUCTION OUTPUT EXTENSION
-// ============================================
-
-model EmployeeDailyOutput {
-  id               String           @id @default(cuid())
-  employeeId       String           @map("employee_id")
-  date             DateTime         @db.Date @map("date")
-  targetProduction Int              @default(0) @map("target_production")
-  piecesProduced   Int              @map("pieces_produced")
-  notes            String?          @db.Text
-  createdBy        String           @map("created_by")
-  isTrash          Boolean          @default(false) @map("is_trash")
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @updatedAt @map("updated_at")
+model POSClosingSession {
+  id                 String             @id @default(cuid())
+  billerId           String             // Reconciled cashier (createdBy User ID)
+  warehouseId        String             // Reconciled warehouse
+  businessDate       DateTime           @db.Date // Reconciled calendar date
+  status             POSClosingStatus   @default(DRAFT)
+  openingCash        Decimal            @default(0) @db.Decimal(12, 2)
+  cashOut            Decimal            @default(0) @db.Decimal(12, 2)
+  officeBill         Decimal            @default(0) @db.Decimal(12, 2)
+  cashInHand         Decimal            @default(0) @db.Decimal(12, 2) // Sum of notes counted
+  availableCash      Decimal            @default(0) @db.Decimal(12, 2) // System expected cash in drawer
+  difference         Decimal            @default(0) @db.Decimal(12, 2)
+  todaysCreditSales  Decimal            @default(0) @db.Decimal(12, 2)
+  loyaltyPoints      Int                @default(0)
+  notes              String?
+  createdBy          String             // Biller who performed reconciliation
+  verifiedBy         String?            // Manager who verified
+  verifiedAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
   
   // Relations
-  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  creator          User             @relation(fields: [createdBy], references: [id])
+  biller             User               @relation("BillerClosingSessions", fields: [billerId], references: [id])
+  warehouse          Warehouse          @relation(fields: [warehouseId], references: [id])
+  verifier           User?              @relation("ManagerClosingVerifications", fields: [verifiedBy], references: [id])
+  denominations      POSCashDenomination?
+  collections        POSClosingCollection[]
+
+  @@unique([billerId, warehouseId, businessDate])
+  @@index([businessDate])
+  @@index([status])
+}
+
+model POSCashDenomination {
+  id         String             @id @default(cuid())
+  sessionId  String             @unique
+  note1000   Int                @default(0)
+  note500    Int                @default(0)
+  note200    Int                @default(0)
+  note100    Int                @default(0)
+  note50     Int                @default(0)
+  note20     Int                @default(0)
+  note10     Int                @default(0)
+  note5      Int                @default(0)
+  note2      Int                @default(0)
+  note1      Int                @default(0)
+  
+  session    POSClosingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model POSClosingCollection {
+  id                String             @id @default(cuid())
+  sessionId         String
+  paymentMethodName String             // Cash sales, Bkash, Visa, Nagad, etc.
+  regularCollection Decimal            @default(0) @db.Decimal(12, 2)
+  duesCollection    Decimal            @default(0) @db.Decimal(12, 2)
+  totalCollection   Decimal            @default(0) @db.Decimal(12, 2)
+  totalReceived     Decimal            @default(0) @db.Decimal(12, 2) // Declared by cashier
+  difference        Decimal            @default(0) @db.Decimal(12, 2)
+  
+  session           POSClosingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@unique([sessionId, paymentMethodName])
+}
+
+enum POSClosingStatus {
+  DRAFT
+  CLOSED
+  VERIFIED
+}
+
+// ─── Stock-Out Module (from ratul branch) ───────────────────────────────────
+
+enum StockOutStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+}
+
+model StockOut {
+  id            String          @id @default(cuid())
+  stockOutNo    String          @unique
+  warehouseId   String
+  date          DateTime        @default(now())
+  status        StockOutStatus  @default(DRAFT)
+  notes         String?         @db.Text
+  voucherId     String?         @unique
+  isTrash       Boolean         @default(false)
+  createdById   String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  items         StockOutItem[]
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdBy     User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  voucher       Voucher?        @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+
+  @@index([warehouseId])
+  @@index([createdById])
+  @@index([voucherId])
+  @@index([isTrash])
+}
+
+model StockOutItem {
+  id            String          @id @default(cuid())
+  stockOutId    String
+  itemId        String
+  variantId     String?
+  quantity      Decimal         @db.Decimal(12, 2)
+  unitRate      Decimal         @db.Decimal(12, 2)
+  amount        Decimal         @db.Decimal(12, 2)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  stockOut      StockOut        @relation(fields: [stockOutId], references: [id], onDelete: Cascade)
+  item          Item            @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([stockOutId])
+  @@index([itemId])
+  @@index([variantId])
+}
+
+// ─── Production Line Module (from ratul branch) ─────────────────────────────
+
+model ProductionLine {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  code        String     @unique
+  description String?
+  status      String     @default("active")
+  isTrash     Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+}
+
+// ─── Employee Daily Output / Production Performance (from ratul branch) ──────
+
+model EmployeeDailyOutput {
+  id               String   @id @default(cuid())
+  employeeId       String   @map("employee_id")
+  date             DateTime @db.Date
+  targetProduction Int      @default(0) @map("target_production")
+  piecesProduced   Int      @map("pieces_produced")
+  notes            String?
+  createdById      String   @map("created_by")
+  isTrash          Boolean  @default(false) @map("is_trash")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy        User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   @@unique([employeeId, date])
   @@index([employeeId])
   @@index([date])
   @@map("employee_daily_outputs")
 }
-

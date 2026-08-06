@@ -7,13 +7,14 @@ import AttendanceListClient from "./_components/attendance-list";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import BiometricSyncButton from "./_components/biometric-sync-button";
+import { getPayrollSettings } from "@/lib/payroll-settings";
 
 interface AttendancePageProps {
   searchParams: Promise<{
     page?: string;
     limit?: string;
     search?: string;
-    productionLineId?: string;
+    warehouseId?: string;
     deviceId?: string;
     employeeId?: string;
     fromDate?: string;
@@ -26,9 +27,9 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const params = await searchParams;
   
   const page = parseInt(params.page || "1", 10);
-  const limit = parseInt(params.limit || "10", 10);
+  const limit = parseInt(params.limit || "20", 10);
   const search = params.search || "";
-  const productionLineId = params.productionLineId || undefined;
+  const warehouseId = params.warehouseId || undefined;
   const deviceId = params.deviceId || undefined;
   const employeeId = params.employeeId || undefined;
   
@@ -41,13 +42,13 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const session = await auth();
   const userId = session?.user?.id;
 
-  // Check permissions
-  const [result, canView, canEdit] = await Promise.all([
+  // Check permissions & settings
+  const [result, canView, canEdit, payrollSettings] = await Promise.all([
     getAttendanceRecordsPaginated({
       page,
       limit,
       search,
-      productionLineId,
+      warehouseId,
       deviceId,
       employeeId,
       fromDate,
@@ -56,6 +57,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
     }),
     userId ? hasPermission(userId, "hr.attendance", "view") : false,
     userId ? hasPermission(userId, "hr.attendance", "edit") : false,
+    getPayrollSettings(),
   ]);
 
   if (!result.success) {
@@ -106,12 +108,12 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
 
       <AttendanceListClient
         initialAttendances={result.attendances || []}
-        pagination={result.pagination}
+        pagination={result.pagination || { page: 1, limit: 20, total: 0, pages: 0 }}
         filters={{
           page,
           limit,
           search,
-          productionLineId: productionLineId || "",
+          warehouseId: warehouseId || "",
           deviceId: deviceId || "",
           employeeId: employeeId || "",
           fromDate,
@@ -122,6 +124,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
           view: canView,
           edit: canEdit,
         }}
+        weekends={payrollSettings.calculation.weekends}
       />
     </div>
   );

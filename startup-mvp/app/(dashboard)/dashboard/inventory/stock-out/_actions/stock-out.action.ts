@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/permissions";
 import { logItemCreated, logItemUpdated } from "@/lib/user-log";
 import { revalidateBothPaths } from "@/lib/route-utils-server";
-import { StockOutStatus, StockTransactionType, VoucherType } from "@prisma/client";
+import { Prisma, StockOutStatus, StockTransactionType, VoucherType } from "@prisma/client";
 import { createVoucher, postVoucher } from "@/app/(dashboard)/dashboard/accounts/vouchers/_actions/voucher.action";
 import { getAccountingOperationSettings } from "@/lib/accounting-settings";
 
@@ -78,7 +78,7 @@ export async function getStockOuts(
         where,
         include: {
           warehouse: { select: { name: true } },
-          createdByUser: { select: { name: true } },
+          createdBy: { select: { name: true } },
           _count: { select: { items: true } },
           items: { select: { amount: true } }
         },
@@ -90,7 +90,7 @@ export async function getStockOuts(
     ]);
 
     const formattedStockOuts = stockOuts.map(so => {
-      const grandTotal = so.items.reduce((sum, item) => sum + Number(item.amount), 0);
+      const grandTotal = (so.items as any[]).reduce((sum: number, item: any) => sum + Number(item.amount), 0);
       const serialized = serialize(so);
       return {
         ...serialized,
@@ -136,7 +136,7 @@ export async function getStockOut(id: string) {
             }
           }
         },
-        createdByUser: { select: { name: true } },
+        createdBy: { select: { name: true } },
         voucher: { select: { voucherNumber: true } }
       }
     });

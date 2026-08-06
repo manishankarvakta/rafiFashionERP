@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -551,7 +551,7 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Total Valuation Out</p>
               <p className="text-2xl font-bold text-destructive">
-                ৳{totalValue.toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                αº│{totalValue.toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           </CardContent>
@@ -641,7 +641,7 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
                           {stockMap[variant.id] ?? 0}
                         </TableCell>
                         <TableCell className="px-4 py-2 text-right">
-                          {variant.costPrice !== null ? `৳${Number(variant.costPrice).toFixed(2)}` : "-"}
+                          {variant.costPrice !== null ? `αº│${Number(variant.costPrice).toFixed(2)}` : "-"}
                         </TableCell>
                       </TableRow>
                     ))}

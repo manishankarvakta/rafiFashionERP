@@ -20,22 +20,22 @@ All calculations run automatically upon manual punch edits, bulk absent processi
 
 ## 2. Files Changed
 ### Existing Files Modified:
-1. **[app/(dashboard)/dashboard/hr/attendance/_actions/attendance.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/attendance/_actions/attendance.action.ts)**:
+1. **[app/(dashboard)/dashboard/hr/attendance/_actions/attendance.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/attendance/_actions/attendance.action.ts)**:
    - Imported `applyDailyAttendancePolicyValues` from the policy service.
    - Integrated check hooks in `processManualAttendance` and `processBulkAttendance` to recalculate policy columns on save.
-2. **[lib/hr/biometric/processor.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/lib/hr/biometric/processor.ts)**:
+2. **[lib/hr/biometric/processor.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/lib/hr/biometric/processor.ts)**:
    - Integrated policy calculation triggers after batch inserts/updates in `processBiometricAttendance`.
-3. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
+3. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
    - Added `reprocessAttendancePolicyCalculations` server action.
-4. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
+4. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
    - Added the **Attendance Policy Reprocess** UI card in the Calculation Preview tab.
-5. **[app/(dashboard)/dashboard/hr/attendance/_components/attendance-list.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/attendance/_components/attendance-list.tsx)**:
+5. **[app/(dashboard)/dashboard/hr/attendance/_components/attendance-list.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/attendance/_components/attendance-list.tsx)**:
    - Expanded the list table columns to display calculated allowances and late counts in the daily summary.
 
 ### New Files Added:
-1. **[lib/hr-payroll/attendance-policy-service.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/lib/hr-payroll/attendance-policy-service.ts)**:
+1. **[lib/hr-payroll/attendance-policy-service.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/lib/hr-payroll/attendance-policy-service.ts)**:
    - Exposes `calculateDailyAttendancePolicyValues`, `applyDailyAttendancePolicyValues`, and `reprocessAttendancePoliciesForDateRange`.
-2. **[scratch/test-attendance-policy.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/scratch/test-attendance-policy.ts)**:
+2. **[scratch/test-attendance-policy.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/scratch/test-attendance-policy.ts)**:
    - Validation script verifying daily calculations and timezone boundary checks.
 
 ---

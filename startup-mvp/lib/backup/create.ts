@@ -35,6 +35,7 @@ import {
   cleanupTempFiles,
   generateTempFilePath,
   formatBytes,
+  resolveDockerContainer,
 } from './utils';
 import { storage } from '@/lib/storage';
 
@@ -421,19 +422,14 @@ async function executePgDump(
 
   // Check if pg_dump is available on the host
   let useDocker = false;
+  let activeContainer = '';
   try {
     await execAsync('pg_dump --version');
     console.log('[Backup] Using host pg_dump...');
   } catch (error) {
-    if (config.containerName) {
-      console.log(`[Backup] pg_dump not found on host. Falling back to Docker container: ${config.containerName}`);
-      useDocker = true;
-    } else {
-      throw new Error(
-        'pg_dump command not found on host and no POSTGRES_CONTAINER specified in .env. ' +
-        'Please install PostgreSQL client tools or configure a Docker container.'
-      );
-    }
+    activeContainer = await resolveDockerContainer(config);
+    console.log(`[Backup] pg_dump not found on host. Falling back to Docker container: ${activeContainer}`);
+    useDocker = true;
   }
 
   if (!useDocker) {
@@ -469,7 +465,7 @@ async function executePgDump(
         'exec',
         '-i', // Interactive but not TTY
         '-e', `PGPASSWORD=${config.password}`,
-        config.containerName!,
+        activeContainer,
         'pg_dump',
         ...dockerPgArgs
       ];

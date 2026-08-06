@@ -122,6 +122,8 @@ export async function getRealtimeDashboardStats(
           grandTotal: true,
           clientId: true,
           paymentDetails: true,
+          discount: true,
+          couponId: true,
         },
       }),
       prisma.sale.findMany({
@@ -129,6 +131,8 @@ export async function getRealtimeDashboardStats(
         select: {
           grandTotal: true,
           paymentDetails: true,
+          discount: true,
+          couponId: true,
         },
       }),
     ]);
@@ -137,6 +141,32 @@ export async function getRealtimeDashboardStats(
     const currentRevenue = currentSales.reduce((acc, sale) => acc + Number(sale.grandTotal), 0);
     const prevRevenue = prevSales.reduce((acc, sale) => acc + Number(sale.grandTotal), 0);
     const revenueGrowth = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue) * 100 : 0;
+
+    // Discount calculations
+    let currentGeneralDiscount = 0;
+    let currentCouponDiscount = 0;
+    currentSales.forEach((sale) => {
+      const d = Number(sale.discount || 0);
+      if (sale.couponId) {
+        currentCouponDiscount += d;
+      } else {
+        currentGeneralDiscount += d;
+      }
+    });
+    const currentTotalSaleDiscount = currentGeneralDiscount + currentCouponDiscount;
+
+    let prevGeneralDiscount = 0;
+    let prevCouponDiscount = 0;
+    prevSales.forEach((sale) => {
+      const d = Number(sale.discount || 0);
+      if (sale.couponId) {
+        prevCouponDiscount += d;
+      } else {
+        prevGeneralDiscount += d;
+      }
+    });
+    const prevTotalSaleDiscount = prevGeneralDiscount + prevCouponDiscount;
+    const totalSaleDiscountGrowth = prevTotalSaleDiscount > 0 ? ((currentTotalSaleDiscount - prevTotalSaleDiscount) / prevTotalSaleDiscount) * 100 : 0;
 
     // Purchase calculations
     const [currentPurchases, prevPurchases] = await Promise.all([
@@ -241,6 +271,72 @@ export async function getRealtimeDashboardStats(
     const prevExpenseTotal = Number(prevExpensesAgg._sum?.debitAmount || 0);
     const expenseGrowth = prevExpenseTotal > 0 ? ((currentExpenseTotal - prevExpenseTotal) / prevExpenseTotal) * 100 : 0;
 
+    // Retail Stock & Value Calculations
+    const stockWhere: any = {};
+    if (warehouseId !== "all") {
+      stockWhere.warehouseId = warehouseId;
+    }
+    const stockItems = await prisma.stock.findMany({
+      where: stockWhere,
+      include: {
+        item: {
+          select: {
+            costPrice: true,
+            salesPrice: true,
+            wholesalePrice: true,
+            itemType: true,
+            isTrash: true,
+            status: true,
+          },
+        },
+        variant: {
+          select: {
+            costPrice: true,
+            salesPrice: true,
+            wholesalePrice: true,
+            item: {
+              select: {
+                itemType: true,
+                isTrash: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    let retailTotalQuantity = 0;
+    let retailSaleValue = 0;
+    let retailStockCostValue = 0;
+
+    let wholesaleTotalQuantity = 0;
+    let wholesaleSaleValue = 0;
+    let wholesaleStockCostValue = 0;
+
+    for (const s of stockItems) {
+      const parentItem = s.item || s.variant?.item;
+      if (parentItem?.isTrash || parentItem?.status === "inactive") continue;
+
+      const qty = Number(s.quantity || 0);
+      if (qty <= 0) continue;
+
+      const itemType = parentItem?.itemType;
+      const sellingPrice = Number(s.variant?.salesPrice ?? s.item?.salesPrice ?? 0);
+      const wholesalePrice = Number(s.variant?.wholesalePrice ?? s.item?.wholesalePrice ?? sellingPrice);
+      const purchasePrice = Number(s.variant?.costPrice ?? s.item?.costPrice ?? 0);
+
+      if (itemType === "WHOLESALE") {
+        wholesaleTotalQuantity += qty;
+        wholesaleSaleValue += qty * (wholesalePrice > 0 ? wholesalePrice : sellingPrice);
+        wholesaleStockCostValue += qty * purchasePrice;
+      } else if (itemType === "RETAIL" || itemType === "READY_PRODUCT") {
+        retailTotalQuantity += qty;
+        retailSaleValue += qty * sellingPrice;
+        retailStockCostValue += qty * purchasePrice;
+      }
+    }
+
     // 2. Fetch Recent Orders (latest 3)
     const recentOrders = await prisma.sale.findMany({
       where: currentFilter,
@@ -336,13 +432,15 @@ export async function getRealtimeDashboardStats(
       })
     );
 
-    // Fetch all active Cash & Bank & MFS Accounts
+    // Fetch all active & visible Cash & Bank & MFS Accounts
     const cashBankAccounts = await prisma.cashBankAccount.findMany({
       where: {
         status: "active",
+        isVisible: true,
       },
       select: {
         id: true,
+        chartOfAccountId: true,
         type: true,
         ChartOfAccount: {
           select: {
@@ -359,12 +457,12 @@ export async function getRealtimeDashboardStats(
       },
     });
 
-    // Fetch completed, non-trash sales for warehouse and date range
+    // Fetch completed, non-trash sales up to currentEnd
     const salesForPayments = await prisma.sale.findMany({
       where: {
         isTrash: false,
         status: "COMPLETED",
-        ...(warehouseId !== "all" ? { warehouseId } : {}),
+        date: { lte: currentEnd },
       },
       select: {
         date: true,
@@ -372,7 +470,7 @@ export async function getRealtimeDashboardStats(
       },
     });
 
-    // In-memory aggregation of payments received
+    // In-memory aggregation of payments received up to currentEnd
     const paymentMap = new Map<string, number>();
     let currentCollectionsReceived = 0;
     let prevCollectionsReceived = 0;
@@ -381,9 +479,9 @@ export async function getRealtimeDashboardStats(
       const details = sale.paymentDetails as any;
       if (!details) continue;
 
-      // 1. Initial Payments (sales date must be in period)
+      // 1. Initial Payments (sales up to selected date filter end boundary)
       const saleDate = new Date(sale.date);
-      if (saleDate >= currentStart && saleDate <= currentEnd) {
+      if (saleDate <= currentEnd) {
         if (details.cashAmount && details.cashAccountId) {
           const netCash = Number(details.cashAmount) - Number(details.changeAmount || 0);
           paymentMap.set(details.cashAccountId, (paymentMap.get(details.cashAccountId) || 0) + netCash);
@@ -396,13 +494,16 @@ export async function getRealtimeDashboardStats(
         }
       }
 
-      // 2. Due Collections (collection date must be in period)
+      // 2. Due Collections (collections up to selected date filter end boundary)
       if (Array.isArray(details.dueCollections)) {
         for (const col of details.dueCollections) {
           const colDate = new Date(col.date);
           const colAmount = Number(col.cashAmount || 0) + Number(col.cardAmount || 0) + Number(col.mfsAmount || 0);
-          if (colDate >= currentStart && colDate <= currentEnd) {
-            currentCollectionsReceived += colAmount;
+          
+          if (colDate <= currentEnd) {
+            if (colDate >= currentStart) {
+              currentCollectionsReceived += colAmount;
+            }
             if (col.cashAmount && col.cashAccountId) {
               paymentMap.set(col.cashAccountId, (paymentMap.get(col.cashAccountId) || 0) + Number(col.cashAmount));
             }
@@ -430,15 +531,92 @@ export async function getRealtimeDashboardStats(
       return acc.warehouses.some((w: any) => w.id === warehouseId);
     });
 
+    // 3. Proper Accounts System: Compute Debit, Credit, and Net Cumulative Balance for each account up to currentEnd
+    const accountCoaIds = filteredAccounts.map((acc: any) => acc.chartOfAccountId || acc.ChartOfAccount?.id).filter(Boolean);
+    const accountDetailsMap = new Map<string, { debit: number; credit: number; balance: number }>();
+
+    if (accountCoaIds.length > 0) {
+      // Query JournalEntryLine aggregates
+      const journalAggregates = await prisma.journalEntryLine.groupBy({
+        by: ["chartOfAccountId"],
+        where: {
+          chartOfAccountId: { in: accountCoaIds },
+          JournalEntry: {
+            date: { lte: currentEnd },
+          },
+        },
+        _sum: {
+          debitAmount: true,
+          creditAmount: true,
+        },
+      });
+
+      const glDebitMap = new Map<string, number>();
+      const glCreditMap = new Map<string, number>();
+      for (const agg of journalAggregates) {
+        glDebitMap.set(agg.chartOfAccountId, Number(agg._sum.debitAmount || 0));
+        glCreditMap.set(agg.chartOfAccountId, Number(agg._sum.creditAmount || 0));
+      }
+
+      // Query VoucherLine for expense outflows / deposits
+      const voucherLines = await prisma.voucherLine.findMany({
+        where: {
+          chartOfAccountId: { in: accountCoaIds },
+          createdAt: { lte: currentEnd },
+        },
+        select: {
+          chartOfAccountId: true,
+          debitAmount: true,
+          creditAmount: true,
+        },
+      });
+
+      const vDebitMap = new Map<string, number>();
+      const vCreditMap = new Map<string, number>();
+      for (const line of voucherLines) {
+        const d = Number(line.debitAmount || 0);
+        const c = Number(line.creditAmount || 0);
+        vDebitMap.set(line.chartOfAccountId, (vDebitMap.get(line.chartOfAccountId) || 0) + d);
+        vCreditMap.set(line.chartOfAccountId, (vCreditMap.get(line.chartOfAccountId) || 0) + c);
+      }
+
+      for (const acc of filteredAccounts) {
+        const coaId = acc.ChartOfAccount?.id;
+        if (!coaId) continue;
+
+        const glDebit = glDebitMap.get(coaId) || 0;
+        const glCredit = glCreditMap.get(coaId) || 0;
+        const posInflow = paymentMap.get(coaId) || 0;
+        const vDebit = vDebitMap.get(coaId) || 0;
+        const vCredit = vCreditMap.get(coaId) || 0;
+
+        let debit = glDebit;
+        let credit = glCredit;
+
+        if (debit === 0 && posInflow > 0) debit += posInflow;
+        if (glDebit === 0 && vDebit > 0) debit += vDebit;
+        if (glCredit === 0 && vCredit > 0) credit += vCredit;
+
+        const balance = debit - credit;
+        accountDetailsMap.set(coaId, { debit, credit, balance });
+      }
+    }
+
     const receivedAccounts = filteredAccounts.map((acc: any) => {
       const coa = acc.ChartOfAccount;
+      const details = accountDetailsMap.get(coa.id) || { debit: 0, credit: 0, balance: 0 };
+
       return {
         id: acc.id,
         type: acc.type, // "CASH" | "BANK" | "MFS"
         coaId: coa.id,
         coaCode: coa.code,
         coaName: coa.name,
-        receivedAmount: paymentMap.get(coa.id) || 0,
+        debit: details.debit,
+        credit: details.credit,
+        balance: details.balance,
+        ledgerBalance: details.balance,
+        receivedAmount: details.balance,
       };
     });
 
@@ -666,6 +844,20 @@ export async function getRealtimeDashboardStats(
         collectionsReceivedGrowth,
         expenseTotal: currentExpenseTotal,
         expenseGrowth,
+        generalDiscount: currentGeneralDiscount,
+        couponDiscount: currentCouponDiscount,
+        totalSaleDiscount: currentTotalSaleDiscount,
+        totalSaleDiscountGrowth,
+        retailStock: {
+          totalQuantity: retailTotalQuantity,
+          saleValue: retailSaleValue,
+          stockValue: retailStockCostValue,
+        },
+        wholesaleStock: {
+          totalQuantity: wholesaleTotalQuantity,
+          saleValue: wholesaleSaleValue,
+          stockValue: wholesaleStockCostValue,
+        },
         recentOrders: recentOrders.map(o => ({
           id: o.id,
           orderId: o.saleNumber,

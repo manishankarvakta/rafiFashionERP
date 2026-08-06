@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import Link from "next/link";
 import StockOutList, { StockOutsHeaderActions } from "./_components/stock-out-list";
 import { getStockOuts } from "./_actions/stock-out.action";

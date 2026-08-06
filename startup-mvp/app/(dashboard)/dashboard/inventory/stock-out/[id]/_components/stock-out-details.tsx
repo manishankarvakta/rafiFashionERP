@@ -304,15 +304,15 @@ export default function StockOutDetails({ initialData }: StockOutDetailsProps) {
                     ) : "-"}
                   </TableCell>
                   <TableCell className="text-right text-red-600 font-medium print:py-1.5 print:px-2 print:text-xs">-{Number(item.quantity)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground print:py-1.5 print:px-2 print:text-xs">à§³{Number(item.unitRate).toFixed(2)}</TableCell>
-                  <TableCell className="text-right font-medium print:py-1.5 print:px-2 print:text-xs">à§³{Number(item.amount).toFixed(2)}</TableCell>
+                  <TableCell className="text-right text-muted-foreground print:py-1.5 print:px-2 print:text-xs">aº¦{Number(item.unitRate).toFixed(2)}</TableCell>
+                  <TableCell className="text-right font-medium print:py-1.5 print:px-2 print:text-xs">aº¦{Number(item.amount).toFixed(2)}</TableCell>
                 </TableRow>
               ))}
               <TableRow className="bg-muted/50 font-bold">
                 <TableCell colSpan={2} className="print:py-1.5 print:px-2 print:text-xs">Total</TableCell>
                 <TableCell className="text-right text-red-600 print:py-1.5 print:px-2 print:text-xs">-{totalQuantity.toFixed(2)}</TableCell>
                 <TableCell className="print:py-1.5 print:px-2"></TableCell>
-                <TableCell className="text-right text-red-600 print:py-1.5 print:px-2 print:text-xs">à§³{totalAmount.toFixed(2)}</TableCell>
+                <TableCell className="text-right text-red-600 print:py-1.5 print:px-2 print:text-xs">aº¦{totalAmount.toFixed(2)}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
@@ -340,7 +340,7 @@ export default function StockOutDetails({ initialData }: StockOutDetailsProps) {
               <div className="space-y-1 print:space-y-0">
                 <p className="text-sm font-medium text-muted-foreground print:text-xs">Total Value Out</p>
                 <p className="text-2xl font-bold text-destructive print:text-slate-900 print:text-base">
-                  à§³{totalAmount.toFixed(2)}
+                  aº¦{totalAmount.toFixed(2)}
                 </p>
               </div>
             </CardContent>

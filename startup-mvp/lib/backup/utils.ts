@@ -7,13 +7,18 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import type { BackupType } from '@/types/backup';
 import {
   BACKUP_ROOT_DIR,
   getBackupTypeDir,
   TEMP_DIR,
   generateBackupId as configGenerateBackupId,
+  type PostgresConfig,
 } from './config';
+
+const execAsync = promisify(exec);
 
 /**
  * Format bytes to human-readable string
@@ -284,4 +289,61 @@ export function parseTimestamp(timestamp: string): Date {
 export function now(): string {
   return new Date().toISOString();
 }
+
+/**
+ * Resolves the docker container to use for Postgres operations.
+ * 
+ * 1. Checks if the configured POSTGRES_CONTAINER is running.
+ * 2. If not running, looks for a running container mapping the configured port.
+ * 3. If none, looks for any running container whose name contains "postgres".
+ * 4. Returns the name/ID of the running container, or the configured name if none found.
+ */
+export async function resolveDockerContainer(config: PostgresConfig): Promise<string> {
+  const configuredName = config.containerName || 'fferp-postgres';
+  
+  try {
+    // Check if the configured container is running
+    const { stdout: isRunning } = await execAsync(
+      `docker inspect -f "{{.State.Running}}" ${configuredName}`
+    );
+    if (isRunning.trim() === 'true') {
+      console.log(`[Backup] Configured container '${configuredName}' is running.`);
+      return configuredName;
+    }
+  } catch (error) {
+    console.warn(`[Backup] Configured container '${configuredName}' is not running or doesn't exist.`);
+  }
+
+  // Configured container is not running. Let's try to find a running container mapped to target port
+  try {
+    const { stdout: portContainers } = await execAsync(
+      `docker ps --filter "publish=${config.port}" --format "{{.Names}}"`
+    );
+    const names = portContainers.trim().split('\n').map(n => n.trim()).filter(Boolean);
+    if (names.length > 0) {
+      console.log(`[Backup] Found running container mapped to port ${config.port}: '${names[0]}'`);
+      return names[0];
+    }
+  } catch (error) {
+    console.warn(`[Backup] Failed to find container by published port ${config.port}:`, error);
+  }
+
+  // Try finding any running container with "postgres" in name
+  try {
+    const { stdout: postgresContainers } = await execAsync(
+      `docker ps --filter "name=postgres" --format "{{.Names}}"`
+    );
+    const names = postgresContainers.trim().split('\n').map(n => n.trim()).filter(Boolean);
+    if (names.length > 0) {
+      console.log(`[Backup] Found running postgres container: '${names[0]}'`);
+      return names[0];
+    }
+  } catch (error) {
+    console.warn('[Backup] Failed to find container by name pattern "postgres":', error);
+  }
+
+  // Fallback to configured name
+  return configuredName;
+}
+
 

@@ -73,6 +73,7 @@ const employeeFormSchema = z.object({
   shiftId: z.string().optional().or(z.literal("")),
   skills: z.array(z.string()).optional(),
   productionLineId: z.string().optional().or(z.literal("")),
+
 });
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
@@ -106,12 +107,12 @@ interface EmployeeFormProps {
     warehouseId: string | null;
     photo: string | null;
     shiftId: string | null;
-    skills?: string[];
-    productionLineId?: string | null;
     type?: string | null;
     employeeTypeId?: string | null;
     departmentId?: string | null;
     departmentRelation?: any;
+    skills?: string[];
+    productionLineId?: string | null;
     salaryPayableAccount: {
       id: string;
       code: string;
@@ -135,9 +136,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
   const { toast } = useToast();
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [skillInput, setSkillInput] = useState("");
-  const [productionLines, setProductionLines] = useState<any[]>([]);
-  const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
 
   const {
     register,
@@ -183,11 +181,11 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
           warehouseId: initialData.warehouseId || "",
           photo: initialData.photo || "",
           shiftId: initialData.shiftId || "",
-          skills: initialData.skills || [],
-          productionLineId: initialData.productionLineId || "",
           type: initialData.type || "",
           employeeTypeId: initialData.employeeTypeId || "",
           biometricDeviceId: (initialData as any).biometricDeviceId || "",
+          skills: initialData.skills || [],
+          productionLineId: (initialData as any).productionLineId || "",
         }
       : {
           name: "",
@@ -224,11 +222,11 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
           warehouseId: "",
           photo: "",
           shiftId: "",
-          skills: [],
-          productionLineId: "",
           type: "",
           employeeTypeId: "",
           biometricDeviceId: "",
+          skills: [],
+          productionLineId: "",
         },
   });
 
@@ -236,6 +234,9 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
   const [shifts, setShifts] = useState<any[]>([]);
   const [employeeTypes, setEmployeeTypes] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [productionLines, setProductionLines] = useState<any[]>([]);
+  const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
+  const [skillInput, setSkillInput] = useState("");
 
   useEffect(() => {
     async function fetchData() {
@@ -346,6 +347,7 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
 
   const nomineePhotos = watch("nominee.photos") || [];
   const [isNomineePhotoDialogOpen, setIsNomineePhotoDialogOpen] = useState(false);
+
   const skills = watch("skills") || [];
 
   const handleAddSkill = (e: React.MouseEvent | React.KeyboardEvent) => {
@@ -586,53 +588,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="productionLineId">Production Line</Label>
-                        <Dialog open={isLineDialogOpen} onOpenChange={setIsLineDialogOpen}>
-                          <DialogTrigger asChild>
-                            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs text-blue-600 hover:text-blue-700">
-                              + Add Line
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-[425px]">
-                            <DialogHeader>
-                              <DialogTitle>Create New Production Line</DialogTitle>
-                              <DialogDescription>
-                                Add a new production line. It will be available instantly.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <ProductionLineDialog
-                              onCancel={() => setIsLineDialogOpen(false)}
-                              onCreated={(newLine) => {
-                                setProductionLines((prev) => [newLine, ...prev]);
-                                setValue("productionLineId", newLine.id);
-                                setIsLineDialogOpen(false);
-                              }}
-                            />
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                      <Select
-                        defaultValue={watch("productionLineId") || ""}
-                        value={watch("productionLineId") || ""}
-                        onValueChange={(value) => setValue("productionLineId", value)}
-                        disabled={loading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Production Line" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None (Not Assigned)</SelectItem>
-                          {productionLines.map((line) => (
-                            <SelectItem key={line.id} value={line.id}>
-                              {line.name} ({line.code})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
                       <Label htmlFor="salary">Monthly Salary</Label>
                       <div className="relative">
                         <FiDollarSign className="absolute left-3 top-3 text-muted-foreground" />
@@ -730,60 +685,79 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
                         disabled={loading}
                       />
                     </div>
-                  </div>
-                </div>
 
-                {/* Skills & Qualifications */}
-                <div className="space-y-4 pt-4">
-                  <div className="flex items-center gap-2 border-b pb-2">
-                    <FiBriefcase className="text-primary" />
-                    <h3 className="font-semibold">Skills & Qualifications</h3>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex gap-2 max-w-md">
-                      <Input
-                        type="text"
-                        placeholder="Type a skill (e.g. belt join, belt topsin) and press Add"
-                        value={skillInput}
-                        onChange={(e) => setSkillInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            handleAddSkill(e);
-                          }
-                        }}
-                        disabled={loading}
-                      />
-                      <Button
-                        type="button"
-                        onClick={handleAddSkill}
+                    {/* Production Line */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="productionLineId">Production Line</Label>
+                        <Dialog open={isLineDialogOpen} onOpenChange={setIsLineDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs text-blue-600 hover:text-blue-700">
+                              + Add Line
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-[425px]">
+                            <DialogHeader>
+                              <DialogTitle>Create New Production Line</DialogTitle>
+                              <DialogDescription>
+                                Add a new production line. It will be available instantly.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <ProductionLineDialog
+                              onCancel={() => setIsLineDialogOpen(false)}
+                              onCreated={(newLine) => {
+                                setProductionLines((prev) => [newLine, ...prev]);
+                                setValue("productionLineId", newLine.id);
+                                setIsLineDialogOpen(false);
+                              }}
+                            />
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                      <Select
+                        defaultValue={watch("productionLineId") || ""}
+                        value={watch("productionLineId") || ""}
+                        onValueChange={(value) => setValue("productionLineId", value === "none" ? "" : value)}
                         disabled={loading}
                       >
-                        Add
-                      </Button>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select production line" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None (Not Assigned)</SelectItem>
+                          {productionLines.map((line) => (
+                            <SelectItem key={line.id} value={line.id}>
+                              {line.name} ({line.code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {skills.map((skill) => (
-                        <span
-                          key={skill}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary border border-primary/20"
-                        >
-                          {skill}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveSkill(skill)}
-                            className="rounded-full hover:bg-primary/20 p-0.5"
-                            disabled={loading}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                      {skills.length === 0 && (
-                        <p className="text-sm text-muted-foreground italic">
-                          No skills added yet. Add skills to define employee capabilities.
-                        </p>
+                    {/* Skills */}
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Skills</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={skillInput}
+                          onChange={(e) => setSkillInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleAddSkill(e); }}
+                          placeholder="Type a skill and press Enter or Add"
+                          disabled={loading}
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={handleAddSkill} disabled={loading}>
+                          Add
+                        </Button>
+                      </div>
+                      {skills.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {skills.map((skill) => (
+                            <span key={skill} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
+                              {skill}
+                              <button type="button" onClick={() => handleRemoveSkill(skill)} className="ml-1 hover:text-destructive">&times;</button>
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>

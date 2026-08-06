@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+﻿import React, { Suspense } from "react";
 import { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";

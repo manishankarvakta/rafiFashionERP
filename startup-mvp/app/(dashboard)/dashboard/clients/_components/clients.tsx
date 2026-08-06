@@ -129,6 +129,122 @@ export default function ClientsListClient({
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", page.toString());
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/clients?${params.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("limit", newLimit.toString());
+    params.set("page", "1");
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/clients?${params.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(initialPagination.limit)}
+          onValueChange={(val: string) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(initialPagination.limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    if (initialPagination.totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page - 1)}
+          disabled={initialPagination.page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(initialPagination.page, initialPagination.totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === initialPagination.page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page + 1)}
+          disabled={initialPagination.page === initialPagination.totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
+
   const handleSearch = (value: string) => {
     setSearch(value);
     const params = new URLSearchParams(searchParams.toString());
@@ -287,8 +403,18 @@ export default function ClientsListClient({
 
   return (
     <div className="space-y-4">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Reduce table padding and font size for clean print layout */
+          .print-bordered th,
+          .print-bordered td {
+            padding: 4px 6px !important;
+            font-size: 8.5pt !important;
+          }
+        }
+      `}} />
       {/* Search and Bulk Actions */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 print:hidden">
         <div className="relative flex-1 max-w-sm">
           <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -394,29 +520,28 @@ export default function ClientsListClient({
         </div>
       </div>
 
-      {/* Table */}
       <div className="border rounded-lg">
-        <Table>
+        <Table className="print-bordered">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12">
+              <TableHead className="w-12 print:hidden">
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={handleSelectAll}
                   aria-label="Select all"
                 />
               </TableHead>
-              <TableHead>Client Code</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Company</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Membership</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Due</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="print:w-[12%] whitespace-nowrap">Client Code</TableHead>
+              <TableHead className="print:w-[18%] whitespace-nowrap">Client</TableHead>
+              <TableHead className="print:w-[20%]">Email</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Phone</TableHead>
+              <TableHead className="print:w-[15%]">Company</TableHead>
+              <TableHead className="print:hidden">Warehouse</TableHead>
+              <TableHead className="print:w-[10%] whitespace-nowrap">Type</TableHead>
+              <TableHead className="print:hidden">Membership</TableHead>
+              <TableHead className="print:hidden">Status</TableHead>
+              <TableHead className="text-right print:w-[10%] whitespace-nowrap">Due</TableHead>
+              <TableHead className="text-right print:hidden">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -433,29 +558,29 @@ export default function ClientsListClient({
                 
                 return (
                   <TableRow key={client.id} className={cn(isSelected && "bg-muted/50")}>
-                    <TableCell>
+                    <TableCell className="print:hidden">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) => handleSelectClient(client.id, checked as boolean)}
                         aria-label={`Select ${client.name || client.email}`}
                       />
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground print:text-black whitespace-nowrap">
                       {client.clientCode || "-"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
+                        <Avatar className="h-8 w-8 print:hidden">
                           <AvatarImage src={client.image || undefined} alt={client.name || client.email || "Client"} />
                           <AvatarFallback>{getInitials(client.name, client.email)}</AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{client.name || "No name"}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{client.email || "-"}</TableCell>
-                    <TableCell className="text-muted-foreground">{client.phone || "-"}</TableCell>
-                    <TableCell className="text-muted-foreground">{client.company || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-muted-foreground print:text-black">{client.email || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground print:text-black whitespace-nowrap">{client.phone || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground print:text-black">{client.company || "-"}</TableCell>
+                    <TableCell className="print:hidden">
                       {client.warehouse ? (
                         <Badge variant="outline" className="text-xs">
                           {client.warehouse.name}
@@ -464,18 +589,23 @@ export default function ClientsListClient({
                         <span className="text-muted-foreground text-xs">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {client.clientType?.toLowerCase() === "wholesale" ? (
-                        <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800">
-                          Wholesale
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-muted-foreground">
-                          Regular
-                        </Badge>
-                      )}
+                    <TableCell className="print:text-black print:whitespace-nowrap">
+                      <div className="print:hidden">
+                        {client.clientType?.toLowerCase() === "wholesale" ? (
+                          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800">
+                            Wholesale
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            Regular
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="hidden print:inline text-black">
+                        {client.clientType?.toLowerCase() === "wholesale" ? "Wholesale" : "Regular"}
+                      </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:hidden">
                       {client.membershipTier && client.membershipTier !== "NONE" ? (
                         <div className="flex flex-col gap-0.5">
                           <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 w-fit text-[10px] font-bold">
@@ -489,7 +619,7 @@ export default function ClientsListClient({
                         <span className="text-muted-foreground text-xs">-</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:hidden">
                       {clientStatus === "trash" ? (
                         <Badge variant="destructive">Trash</Badge>
                       ) : clientStatus === "inactive" ? (
@@ -498,21 +628,22 @@ export default function ClientsListClient({
                         <Badge variant="default">Active</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right whitespace-nowrap print:text-black print:font-bold">
                       <span
-                        className={
+                        className={cn(
                           (client.dueAmount ?? 0) > 0
-                            ? "font-semibold text-amber-600"
-                            : "text-muted-foreground"
-                        }
+                            ? "font-semibold text-amber-600 print:text-black"
+                            : "text-muted-foreground print:text-black"
+                        )}
                       >
-                        ৳{(client.dueAmount ?? 0).toLocaleString("en-US", {
+                        <span className="print:hidden">৳</span>
+                        {(client.dueAmount ?? 0).toLocaleString("en-US", {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right print:hidden">
                       <div className="flex items-center justify-end gap-2">
                         {!isTrash && (
                           <>
@@ -575,47 +706,17 @@ export default function ClientsListClient({
       </div>
 
       {/* Pagination */}
-      {initialPagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
-            {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
-            {initialPagination.total} clients
+      {(initialPagination.totalPages > 1 || initialPagination.total > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 print:hidden">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
+              {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
+              {initialPagination.total} clients
+            </div>
+            {renderLimitSelector()}
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === 1}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page - 1));
-                const tab = searchParams.get("tab") || "all";
-                if (tab) {
-                  params.set("tab", tab);
-                }
-                router.push(`/dashboard/clients?${params.toString()}`);
-              }}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === initialPagination.totalPages}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page + 1));
-                const tab = searchParams.get("tab") || "all";
-                if (tab) {
-                  params.set("tab", tab);
-                }
-                router.push(`/dashboard/clients?${params.toString()}`);
-              }}
-            >
-              Next
-            </Button>
-          </div>
+          {renderPaginationButtons()}
         </div>
       )}
 

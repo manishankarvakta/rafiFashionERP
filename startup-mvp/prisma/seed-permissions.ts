@@ -42,14 +42,18 @@ async function seedPermissions() {
     "hr.payroll.view",
     "hr.payroll.manage",
     "hr.fines",
-    "hr.bonuses",
-    "hr.production-output"
+    "hr.bonuses"
   ];
 
   // Manager Template - Full access to all pages
   const managerPermissions: Partial<EnhancedPermissions> = {
     ...createPermissionsForPages(allPageKeys, allStandardOps),
-    ...createPermissionsForPages(hrExtraKeys, allStandardOps)
+    ...createPermissionsForPages(hrExtraKeys, allStandardOps),
+    "sales.daybook": {
+      navigationVisible: true,
+      pageAccess: true,
+      operations: ["view", "create", "edit", "verify", "reopen"] as any
+    }
   };
 
   // Sales Executive Template - Quotations and Clients focus
@@ -96,6 +100,11 @@ async function seedPermissions() {
     ...createPermissionsForPages(["reports.view", "inventory.stock-movements"], ["view"]),
     // Sales - full access
     ...createPermissionsForPages(["sales.sales"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
+    "sales.daybook": {
+      navigationVisible: true,
+      pageAccess: true,
+      operations: ["view", "create", "edit"] as any
+    }
   };
 
   // Accounts Template - Accounts module focus
@@ -158,7 +167,12 @@ async function seedPermissions() {
   // Super Admin Template - Full system access (developer-level)
   const superAdminPermissions: Partial<EnhancedPermissions> = {
     ...createPermissionsForPages(allPageKeys, ["create", "view", "edit", "move-to-trash", "delete-permanently", "export", "import"]),
-    ...createPermissionsForPages(hrExtraKeys, ["create", "view", "edit", "move-to-trash", "delete-permanently", "export", "import"])
+    ...createPermissionsForPages(hrExtraKeys, ["create", "view", "edit", "move-to-trash", "delete-permanently", "export", "import"]),
+    "sales.daybook": {
+      navigationVisible: true,
+      pageAccess: true,
+      operations: ["view", "create", "edit", "verify", "reopen"] as any
+    }
   };
 
   // Admin Template - Full operational access (no system/developer settings)
@@ -198,6 +212,9 @@ async function seedPermissions() {
     ...createPermissionsForPages(["sales.sales"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
     // Inventory - full access
     ...createPermissionsForPages(["inventory.stock"], ["view", "adjust"]),
+    ...createPermissionsForPages(["inventory.stock-out"], allStandardOps),
+    // Production Output - full access
+    ...createPermissionsForPages(["hr.production-output"], allStandardOps),
     // Production - full access
     ...createPermissionsForPages(["production.boms"], allStandardOps),
     ...createPermissionsForPages(["production.orders"], ["view", "create", "edit", "start", "complete", "cancel"]),
@@ -211,6 +228,11 @@ async function seedPermissions() {
     ...createPermissionsForPages(["reports.view", "inventory.stock-movements"], ["view", "export"]),
     // HR Extra permissions
     ...createPermissionsForPages(hrExtraKeys, allStandardOps),
+    "sales.daybook": {
+      navigationVisible: true,
+      pageAccess: true,
+      operations: ["view", "create", "edit", "verify", "reopen"] as any
+    },
     // Settings - full access except developer tools
     ...createPermissionsForPages(
       [
@@ -327,6 +349,11 @@ async function seedPermissions() {
     ...createPermissionsForPages(["purchases.purchases"], allStandardOps),
     // Sales - view only
     ...createPermissionsForPages(["sales.sales"], ["view"]),
+    "sales.daybook": {
+      navigationVisible: true,
+      pageAccess: true,
+      operations: ["view", "verify"] as any
+    },
     // Inventory - view only
     ...createPermissionsForPages(["inventory.stock"], ["view"]),
     // Production - view only
@@ -453,6 +480,11 @@ async function seedPermissions() {
     ),
     // Sales - full access
     ...createPermissionsForPages(["sales.sales"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
+    "sales.daybook": {
+      navigationVisible: true,
+      pageAccess: true,
+      operations: ["view", "create", "edit"] as any
+    },
     // Inventory - view only
     ...createPermissionsForPages(["inventory.stock"], ["view"]),
     // Production - view only
@@ -556,6 +588,8 @@ async function seedPermissions() {
     ...createPermissionsForPages(["sales.sales"], ["view"]),
     // Inventory - view and adjust
     ...createPermissionsForPages(["inventory.stock"], ["view", "adjust"]),
+    ...createPermissionsForPages(["inventory.stock-out"], allStandardOps),
+    ...createPermissionsForPages(["hr.production-output"], allStandardOps),
     // Production - full access
     ...createPermissionsForPages(["production.boms"], allStandardOps),
     ...createPermissionsForPages(["production.orders"], ["view", "create", "edit", "start", "complete", "cancel"]),

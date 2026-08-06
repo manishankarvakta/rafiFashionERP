@@ -29,6 +29,7 @@ import {
   cleanupTempFiles,
   generateTempFilePath,
   formatBytes,
+  resolveDockerContainer,
 } from './utils';
 import { storage } from '@/lib/storage';
 import { createReadStream } from 'fs';
@@ -496,59 +497,135 @@ async function executePgRestore(
   const config = parsePostgresConfig();
   const manager = getRestoreManager();
 
-  // Build pg_restore command
-  const args = [
-    `-h ${config.host}`,
-    `-p ${config.port}`,
-    `-U ${config.user}`,
-    `-d ${config.database}`,
+  // Build pg_restore command args
+  const pgArgs = [
+    '-U', config.user,
+    '-d', config.database,
     '--no-owner',
     '--no-acl',
   ];
 
   if (cleanDatabase) {
-    args.push('--clean'); // Drop objects before recreating
+    pgArgs.push('--clean'); // Drop objects before recreating
   }
 
-  args.push(dumpPath);
-
-  const command = `pg_restore ${args.join(' ')}`;
-
+  // Check if pg_restore is available on the host
+  let useDocker = false;
+  let activeContainer = '';
   try {
-    // Update progress as restore runs
-    const progressRange = progressEnd - progressStart;
-    const updateInterval = setInterval(() => {
-      const current = manager.getProgress(restoreId);
-      if (current && current.progress < progressEnd - 5) {
-        manager.updateProgress(restoreId, {
-          progress: Math.min(current.progress + 2, progressEnd - 5),
-        });
+    await execAsync('pg_restore --version');
+    console.log('[Backup] Using host pg_restore...');
+  } catch (error) {
+    activeContainer = await resolveDockerContainer(config);
+    console.log(`[Backup] pg_restore not found on host. Falling back to Docker container: ${activeContainer}`);
+    useDocker = true;
+  }
+
+  if (!useDocker) {
+    const hostArgs = [
+      `-h`, config.host,
+      `-p`, config.port.toString(),
+      ...pgArgs,
+      dumpPath
+    ];
+    const command = `pg_restore ${hostArgs.join(' ')}`;
+
+    try {
+      // Update progress as restore runs
+      const updateInterval = setInterval(() => {
+        const current = manager.getProgress(restoreId);
+        if (current && current.progress < progressEnd - 5) {
+          manager.updateProgress(restoreId, {
+            progress: Math.min(current.progress + 2, progressEnd - 5),
+          });
+        }
+      }, 2000);
+
+      await execAsync(command, {
+        env: {
+          ...process.env,
+          PGPASSWORD: config.password,
+        },
+        maxBuffer: 100 * 1024 * 1024, // 100MB buffer
+      });
+
+      clearInterval(updateInterval);
+      manager.updateProgress(restoreId, { progress: progressEnd });
+    } catch (error: any) {
+      // Some pg_restore warnings are normal (e.g., objects already exist)
+      // Only fail if it's a critical error
+      if (error.message.includes('command not found') || error.code === 'ENOENT') {
+        throw new Error('pg_restore command not found. Please install PostgreSQL client tools.');
       }
-    }, 2000);
 
-    await execAsync(command, {
-      env: {
-        ...process.env,
-        PGPASSWORD: config.password,
-      },
-      maxBuffer: 100 * 1024 * 1024, // 100MB buffer
+      if (error.message.includes('password authentication failed')) {
+        throw new Error('Database authentication failed.');
+      }
+
+      // Log warning but don't fail
+      manager.addLog(restoreId, `pg_restore warning: ${error.message}`, 'warn');
+    }
+  } else {
+    // Docker-based pg_restore
+    return new Promise((resolve, reject) => {
+      const { spawn } = require('child_process');
+      const fs = require('fs');
+
+      const fileStream = fs.createReadStream(dumpPath);
+
+      // We use spawn to execute docker exec -i <container> pg_restore <args>
+      const dockerArgs = [
+        'exec',
+        '-i',
+        '-e', `PGPASSWORD=${config.password}`,
+        activeContainer,
+        'pg_restore',
+        ...pgArgs
+      ];
+
+      console.log(`[Backup] Executing: cat ${dumpPath} | docker ${dockerArgs.join(' ')}`);
+
+      // Update progress as restore runs
+      const updateInterval = setInterval(() => {
+        const current = manager.getProgress(restoreId);
+        if (current && current.progress < progressEnd - 5) {
+          manager.updateProgress(restoreId, {
+            progress: Math.min(current.progress + 2, progressEnd - 5),
+          });
+        }
+      }, 2000);
+
+      const child = spawn('docker', dockerArgs);
+
+      fileStream.pipe(child.stdin);
+
+      let stderr = '';
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code: number) => {
+        clearInterval(updateInterval);
+        if (code === 0) {
+          manager.updateProgress(restoreId, { progress: progressEnd });
+          resolve();
+        } else {
+          // Some warnings are normal during pg_restore, check if we should reject
+          if (stderr.toLowerCase().includes('error:') || stderr.toLowerCase().includes('fatal:')) {
+            reject(new Error(`Docker pg_restore failed with code ${code}: ${stderr}`));
+          } else {
+            console.warn(`Docker pg_restore finished with warning code ${code}: ${stderr}`);
+            manager.updateProgress(restoreId, { progress: progressEnd });
+            resolve();
+          }
+        }
+      });
+
+      child.on('error', (err: Error) => {
+        clearInterval(updateInterval);
+        reject(new Error(`Failed to start Docker process: ${err.message}`));
+      });
     });
-
-    clearInterval(updateInterval);
-    manager.updateProgress(restoreId, { progress: progressEnd });
-  } catch (error: any) {
-    // Some pg_restore warnings are normal (e.g., objects already exist)
-    // Only fail if it's a critical error
-    if (error.message.includes('command not found') || error.code === 'ENOENT') {
-      throw new Error('pg_restore command not found. Please install PostgreSQL client tools.');
-    }
-
-    if (error.message.includes('password authentication failed')) {
-      throw new Error('Database authentication failed.');
-    }
-
-    // Log warning but don't fail
-    manager.addLog(restoreId, `pg_restore warning: ${error.message}`, 'warn');
   }
 }
 

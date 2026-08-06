@@ -36,7 +36,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "1. Checking Containers"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-CONTAINERS=("rafierp-app" "rafierp-postgres" "rafierp-redis")
+CONTAINERS=("fferp-app" "fferp-postgres" "fferp-redis")
 ALL_RUNNING=true
 
 for container in "${CONTAINERS[@]}"; do
@@ -83,13 +83,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "3. Checking Database Data"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if docker exec rafierp-postgres pg_isready -U postgres > /dev/null 2>&1; then
+if docker exec fferp-postgres pg_isready -U postgres > /dev/null 2>&1; then
     echo "✅ PostgreSQL is ready"
     echo ""
     
     # Check tables and row counts
     echo "📊 Table Row Counts:"
-    docker exec rafierp-postgres psql -U postgres -d startup_mvp -c "
+    docker exec fferp-postgres psql -U postgres -d startup_mvp -c "
     SELECT
         schemaname,
         tablename,
@@ -103,9 +103,9 @@ if docker exec rafierp-postgres pg_isready -U postgres > /dev/null 2>&1; then
     echo ""
     
     # Specific critical tables
-    USER_COUNT=$(docker exec rafierp-postgres psql -U postgres -d startup_mvp -t -c "SELECT COUNT(*) FROM \"User\";" 2>/dev/null | xargs)
-    CLIENT_COUNT=$(docker exec rafierp-postgres psql -U postgres -d startup_mvp -t -c "SELECT COUNT(*) FROM \"Client\";" 2>/dev/null | xargs)
-    FILE_COUNT=$(docker exec rafierp-postgres psql -U postgres -d startup_mvp -t -c "SELECT COUNT(*) FROM \"File\";" 2>/dev/null | xargs)
+    USER_COUNT=$(docker exec fferp-postgres psql -U postgres -d startup_mvp -t -c "SELECT COUNT(*) FROM \"User\";" 2>/dev/null | xargs)
+    CLIENT_COUNT=$(docker exec fferp-postgres psql -U postgres -d startup_mvp -t -c "SELECT COUNT(*) FROM \"Client\";" 2>/dev/null | xargs)
+    FILE_COUNT=$(docker exec fferp-postgres psql -U postgres -d startup_mvp -t -c "SELECT COUNT(*) FROM \"File\";" 2>/dev/null | xargs)
     
     echo "📈 Critical Data Counts:"
     echo "   Users: ${USER_COUNT}"
@@ -150,9 +150,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # 5. Check Application Logs
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if docker ps --format '{{.Names}}' | grep -q "^rafierp-app$"; then
+if docker ps --format '{{.Names}}' | grep -q "^fferp-app$"; then
     echo "📋 Recent deployment messages:"
-    docker logs rafierp-app --tail 50 2>/dev/null | grep -E "(migrations|data|preserved|initialized|SAFE|READY|Starting)" || echo "No relevant log messages found"
+    docker logs fferp-app --tail 50 2>/dev/null | grep -E "(migrations|data|preserved|initialized|SAFE|READY|Starting)" || echo "No relevant log messages found"
 else
     echo -e "${RED}❌ Application container not running${NC}"
 fi
@@ -166,9 +166,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "6. Checking Migration Status"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if docker ps --format '{{.Names}}' | grep -q "^rafierp-app$"; then
+if docker ps --format '{{.Names}}' | grep -q "^fferp-app$"; then
     echo "📊 Applied Migrations:"
-    docker exec rafierp-app npx prisma migrate status 2>/dev/null || echo "Could not check migration status"
+    docker exec fferp-app npx prisma migrate status 2>/dev/null || echo "Could not check migration status"
 else
     echo -e "${RED}❌ Application container not running${NC}"
 fi

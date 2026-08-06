@@ -13,6 +13,7 @@ import {
   formatBusinessDateKey,
   ShiftPolicy,
   calculateWorkHoursWithBreak,
+  combineDateAndTime,
 } from "@/lib/hr/shift-utils";
 import { Prisma } from "@prisma/client";
 import { startOfDay, endOfDay } from "date-fns";
@@ -143,7 +144,7 @@ export async function processManualAttendance(input: {
 
     let otHours = 0;
     if (checkOutDate && shiftPolicy) {
-      otHours = calculateOTHours(checkOutDate, targetDate, shiftPolicy as any);
+      otHours = calculateOTHours(checkOutDate, targetDate, shiftPolicy as any, workHours);
     }
 
     const status = determineAttendanceStatus(checkInDate as any, targetDate, shiftPolicy as any, breakCheckInDate);
@@ -274,7 +275,7 @@ export async function getAttendances(startDate: Date, endDate: Date, employeeId?
         employee: { select: { id: true, name: true, employeeCode: true, designation: true } },
         shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
       },
-      orderBy: [{ date: 'desc' }, { checkIn: 'desc' }, { employee: { name: 'asc' } }]
+      orderBy: [{ date: 'desc' }, { employee: { name: 'asc' } }]
     });
 
     return { success: true, attendances };
@@ -288,7 +289,7 @@ export async function getAttendances(startDate: Date, endDate: Date, employeeId?
  * Bulk process attendance for a specific date
  * (e.g., mark everyone who hasn't punched as ABSENT)
  */
-export async function processBulkAttendance(date: string, productionLineId?: string) {
+export async function processBulkAttendance(date: string, warehouseId?: string) {
   const startTime = Date.now();
   try {
     await syncTimezoneFromDb();
@@ -325,6 +326,10 @@ export async function processBulkAttendance(date: string, productionLineId?: str
         date: targetDate,
         status: "active",
         isTrash: false,
+        OR: [
+          { warehouseId: null },
+          { warehouseId }
+        ]
       }
     });
 
@@ -343,8 +348,8 @@ export async function processBulkAttendance(date: string, productionLineId?: str
       status: "active"
     };
     
-    if (productionLineId) {
-      whereClause.productionLineId = productionLineId;
+    if (warehouseId) {
+      whereClause.warehouseId = warehouseId;
     }
 
     const employees = await prisma.employee.findMany({
@@ -471,11 +476,67 @@ export async function processBulkAttendance(date: string, productionLineId?: str
   }
 }
 
+/**
+ * Bulk process attendance for a DATE RANGE
+ * Loops through every day from fromDate to toDate and marks un-punched employees as ABSENT.
+ */
+export async function processBulkAttendanceRange(fromDate: string, toDate: string, warehouseId?: string) {
+  try {
+    const start = new Date(`${fromDate}T00:00:00.000Z`);
+    const end   = new Date(`${toDate}T00:00:00.000Z`);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+      return { success: false, error: "Invalid date range" };
+    }
+
+    // Limit to a maximum of 31 days to prevent runaway processing
+    const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays > 31) {
+      return { success: false, error: "Date range cannot exceed 31 days" };
+    }
+
+    let totalCreated   = 0;
+    let totalProcessed = 0;
+    const errors: string[] = [];
+
+    // Walk through every day in the range
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const dateStr = cursor.toISOString().split("T")[0]; // YYYY-MM-DD
+      const result  = await processBulkAttendance(dateStr, warehouseId);
+
+      if (result.success) {
+        totalCreated   += result.createdCount  ?? 0;
+        totalProcessed += result.processedEmployees ?? 0;
+      } else {
+        errors.push(`${dateStr}: ${result.error}`);
+      }
+
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    if (errors.length > 0 && totalCreated === 0) {
+      return { success: false, error: errors.join("; ") };
+    }
+
+    return {
+      success: true,
+      count:   totalCreated,
+      daysProcessed: diffDays,
+      createdCount:  totalCreated,
+      errors: errors.length > 0 ? errors : undefined,
+    };
+  } catch (error) {
+    console.error("processBulkAttendanceRange error:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to process bulk attendance range" };
+  }
+}
+
 export async function getAttendanceRecordsPaginated({
   page = 1,
   limit = 10,
   search = "",
-  productionLineId,
+  warehouseId,
   deviceId,
   employeeId,
   fromDate,
@@ -485,7 +546,7 @@ export async function getAttendanceRecordsPaginated({
   page?: number;
   limit?: number;
   search?: string;
-  productionLineId?: string;
+  warehouseId?: string;
   deviceId?: string;
   employeeId?: string;
   fromDate?: string;
@@ -510,21 +571,7 @@ export async function getAttendanceRecordsPaginated({
 
     // Filters
     if (employeeId) where.employeeId = employeeId;
-    
-    if (productionLineId && productionLineId !== "all") {
-      if (productionLineId === "none") {
-        where.employee = {
-          ...((where.employee as any) || {}),
-          productionLineId: null
-        };
-      } else {
-        where.employee = {
-          ...((where.employee as any) || {}),
-          productionLineId: productionLineId
-        };
-      }
-    }
-    
+    if (warehouseId && warehouseId !== "all") where.employee = { warehouseId };
     if (status && status !== "ALL") {
       if (status === "ON_DUTY") {
         where.checkIn = { not: null };
@@ -556,7 +603,7 @@ export async function getAttendanceRecordsPaginated({
           employee: { select: { id: true, name: true, employeeCode: true, designation: true } },
           shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
         },
-        orderBy: [{ date: 'desc' }, { checkIn: 'desc' }, { employee: { name: 'asc' } }],
+        orderBy: [{ date: 'desc' }, { employee: { name: 'asc' } }],
         skip,
         take: limit,
       })
@@ -577,3 +624,136 @@ export async function getAttendanceRecordsPaginated({
     return { success: false, error: error.message || "Failed to fetch attendances", attendances: [], pagination: null };
   }
 }
+
+export async function closeShiftBulk(attendanceIds: string[]) {
+  try {
+    await syncTimezoneFromDb();
+    
+    const session = await auth();
+    if (!session?.user) return { success: false, error: "Unauthorized" };
+
+    const canEdit = await hasPermission(session.user.id, "hr.attendance", "edit");
+    if (!canEdit) return { success: false, error: "Permission denied" };
+
+    if (!attendanceIds || attendanceIds.length === 0) {
+      return { success: false, error: "No attendances selected" };
+    }
+
+    const attendances = await prisma.attendance.findMany({
+      where: { id: { in: attendanceIds } },
+      include: {
+        employee: {
+          include: { shift: true }
+        }
+      }
+    });
+
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (let att of attendances) {
+      if (att.isLocked) {
+        errors.push(`Attendance for employee ${att.employee.name} on ${att.date.toISOString().split("T")[0]} is locked.`);
+        continue;
+      }
+
+      if (!att.checkIn) {
+        errors.push(`Employee ${att.employee.name} has no check-in on ${att.date.toISOString().split("T")[0]}.`);
+        continue;
+      }
+
+      const employee = att.employee;
+      const shift = employee.shift;
+
+      if (!shift) {
+        errors.push(`Employee ${employee.name} has no shift assigned.`);
+        continue;
+      }
+
+      const shiftPolicy: ShiftPolicy = {
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        graceMinutes: shift.graceMinutes,
+        lateAfter: shift.lateAfter,
+        halfDayAfter: shift.halfDayAfter,
+        otStartAfter: shift.otStartAfter,
+        breakStartTime: shift.breakStartTime,
+        breakEndTime: shift.breakEndTime,
+        breakGraceMinutes: shift.breakGraceMinutes,
+        breakLateAfter: shift.breakLateAfter
+      };
+
+      const checkOutDate = combineDateAndTime(att.date, shift.endTime);
+
+      let breakDurationMins = 0;
+      if (shiftPolicy.breakStartTime && shiftPolicy.breakEndTime) {
+        const { breakStartDateTime, breakEndDateTime } = getShiftWindow(att.date, shiftPolicy);
+        if (breakStartDateTime && breakEndDateTime) {
+          breakDurationMins = Math.abs(breakEndDateTime.getTime() - breakStartDateTime.getTime()) / 60000;
+        } else {
+          breakDurationMins = 60;
+        }
+      }
+
+      const workHours = calculateWorkHoursWithBreak(
+        att.checkIn,
+        checkOutDate,
+        att.breakCheckOut,
+        att.breakCheckIn,
+        breakDurationMins
+      );
+
+      const otHours = calculateOTHours(checkOutDate, att.date, shiftPolicy as any, workHours);
+      const status = determineAttendanceStatus(att.checkIn, att.date, shiftPolicy as any, att.breakCheckIn);
+
+      const oldAttendance = { ...att };
+
+      const updated = await prisma.attendance.update({
+        where: { id: att.id },
+        data: {
+          checkOut: checkOutDate,
+          workHours,
+          otHours,
+          status,
+          shiftId: shift.id,
+          updatedBy: session.user.id,
+          isManual: true
+        }
+      });
+
+      await logItemUpdated(
+        session.user.id,
+        "Attendance",
+        att.id,
+        [],
+        `Shift closed for ${employee.name}`,
+        { old: oldAttendance, new: updated }
+      );
+
+      try {
+        await applyDailyAttendancePolicyValues(updated.id, { force: true });
+      } catch (err) {
+        console.error(`Failed to apply policy to closed shift ${updated.id}:`, err);
+      }
+
+      successCount++;
+    }
+
+    revalidateBothPaths("hr/attendance");
+
+    if (errors.length > 0) {
+      return { 
+        success: true, 
+        message: `Successfully closed ${successCount} shift(s).`,
+        warnings: errors
+      };
+    }
+
+    return { success: true, message: `Successfully closed all ${successCount} shift(s).` };
+
+  } catch (error) {
+    console.error("closeShiftBulk error:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to close shifts" };
+  }
+}
+

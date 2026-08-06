@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -231,7 +231,7 @@ export default function StockOutList({
                     <TableCell>{so.warehouse?.name}</TableCell>
                     <TableCell>{so._count?.items}</TableCell>
                     <TableCell className="text-right font-medium">
-                      ৳{Number(so.grandTotal || 0).toLocaleString()}
+                      αº│{Number(so.grandTotal || 0).toLocaleString()}
                     </TableCell>
                     <TableCell>
                       <Badge variant={so.status === "COMPLETED" ? "default" : "secondary"}>

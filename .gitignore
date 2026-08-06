@@ -10,21 +10,11 @@ volumes/minio/
 volumes/redis/
 
 # Environment files
-.env
-.env.local
 .env.docker
 .env.docker.local
-
-# Dependencies and build outputs
-node_modules/
-.next/
-out/
-build/
-dist/
 
 # Keep the directory structure
 !volumes/.gitkeep
 
 
 .DS_Store
-

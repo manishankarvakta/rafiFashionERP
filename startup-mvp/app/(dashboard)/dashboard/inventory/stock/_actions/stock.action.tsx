@@ -1002,20 +1002,47 @@ export async function getStockSummaryMetrics(filters: {
       where.warehouseId = filters.warehouseId;
     }
 
-    if (filters.search) {
-      where.OR = [
-        { item: { name: { contains: filters.search, mode: "insensitive" } } },
-        { item: { code: { contains: filters.search, mode: "insensitive" } } },
-        { item: { barcode: { contains: filters.search, mode: "insensitive" } } },
-        { variant: { sku: { contains: filters.search, mode: "insensitive" } } },
-        { variant: { barcode: { contains: filters.search, mode: "insensitive" } } },
-        { variant: { item: { name: { contains: filters.search, mode: "insensitive" } } } },
-        { variant: { item: { code: { contains: filters.search, mode: "insensitive" } } } },
-        { variant: { item: { barcode: { contains: filters.search, mode: "insensitive" } } } },
-        { warehouse: { name: { contains: filters.search, mode: "insensitive" } } },
-        { warehouse: { code: { contains: filters.search, mode: "insensitive" } } },
-      ];
-    }
+    // Combine Search query AND Item status filters
+    where.AND = [
+      ...(filters.search
+        ? [
+            {
+              OR: [
+                { item: { name: { contains: filters.search, mode: "insensitive" as const } } },
+                { item: { code: { contains: filters.search, mode: "insensitive" as const } } },
+                { item: { barcode: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { sku: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { barcode: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { item: { name: { contains: filters.search, mode: "insensitive" as const } } } },
+                { variant: { item: { code: { contains: filters.search, mode: "insensitive" as const } } } },
+                { variant: { item: { barcode: { contains: filters.search, mode: "insensitive" as const } } } },
+                { warehouse: { name: { contains: filters.search, mode: "insensitive" as const } } },
+                { warehouse: { code: { contains: filters.search, mode: "insensitive" as const } } },
+              ],
+            },
+          ]
+        : []),
+      {
+        OR: [
+          {
+            item: {
+              isTrash: false,
+              status: "active",
+              trackInventory: true,
+            },
+          },
+          {
+            variant: {
+              item: {
+                isTrash: false,
+                status: "active",
+                trackInventory: true,
+              },
+            },
+          },
+        ],
+      },
+    ];
 
     const stocks = await prisma.stock.findMany({
       where,
@@ -1028,6 +1055,7 @@ export async function getStockSummaryMetrics(filters: {
         },
         variant: {
           select: {
+            costPrice: true,
             item: {
               select: {
                 costPrice: true
@@ -1043,8 +1071,9 @@ export async function getStockSummaryMetrics(filters: {
 
     for (const stock of stocks) {
       const qty = Number(stock.quantity);
-      const parentItem = stock.item || stock.variant?.item;
-      const costPrice = parentItem ? Number(parentItem.costPrice) : 0;
+      const costPrice = stock.variant
+        ? Number(stock.variant.costPrice || stock.variant.item?.costPrice || 0)
+        : Number(stock.item?.costPrice || 0);
       totalQuantity += qty;
       totalValue += qty * costPrice;
     }
@@ -1128,25 +1157,52 @@ export async function getStocks(
       where.warehouseId = filters.warehouseId;
     }
 
-    if (filters.search) {
-      where.OR = [
-        // 1. Direct Item match (simple items)
-        { item: { name: { contains: filters.search, mode: "insensitive" } } },
-        { item: { code: { contains: filters.search, mode: "insensitive" } } },
-        { item: { barcode: { contains: filters.search, mode: "insensitive" } } },
+    // Combine Search query AND Item status filters
+    where.AND = [
+      ...(filters.search
+        ? [
+            {
+              OR: [
+                // 1. Direct Item match (simple items)
+                { item: { name: { contains: filters.search, mode: "insensitive" as const } } },
+                { item: { code: { contains: filters.search, mode: "insensitive" as const } } },
+                { item: { barcode: { contains: filters.search, mode: "insensitive" as const } } },
 
-        // 2. Variant match (SKUs / barcodes / parent details)
-        { variant: { sku: { contains: filters.search, mode: "insensitive" } } },
-        { variant: { barcode: { contains: filters.search, mode: "insensitive" } } },
-        { variant: { item: { name: { contains: filters.search, mode: "insensitive" } } } },
-        { variant: { item: { code: { contains: filters.search, mode: "insensitive" } } } },
-        { variant: { item: { barcode: { contains: filters.search, mode: "insensitive" } } } },
+                // 2. Variant match (SKUs / barcodes / parent details)
+                { variant: { sku: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { barcode: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { item: { name: { contains: filters.search, mode: "insensitive" as const } } } },
+                { variant: { item: { code: { contains: filters.search, mode: "insensitive" as const } } } },
+                { variant: { item: { barcode: { contains: filters.search, mode: "insensitive" as const } } } },
 
-        // 3. Warehouse match
-        { warehouse: { name: { contains: filters.search, mode: "insensitive" } } },
-        { warehouse: { code: { contains: filters.search, mode: "insensitive" } } },
-      ];
-    }
+                // 3. Warehouse match
+                { warehouse: { name: { contains: filters.search, mode: "insensitive" as const } } },
+                { warehouse: { code: { contains: filters.search, mode: "insensitive" as const } } },
+              ],
+            },
+          ]
+        : []),
+      {
+        OR: [
+          {
+            item: {
+              isTrash: false,
+              status: "active",
+              trackInventory: true,
+            },
+          },
+          {
+            variant: {
+              item: {
+                isTrash: false,
+                status: "active",
+                trackInventory: true,
+              },
+            },
+          },
+        ],
+      },
+    ];
 
     // Get total count
     const total = await prisma.stock.count({ where });
@@ -1357,6 +1413,9 @@ export async function getStockLedger(
       where.OR = [
         { item: { name: { contains: filters.search, mode: "insensitive" } } },
         { item: { code: { contains: filters.search, mode: "insensitive" } } },
+        { item: { barcode: { contains: filters.search, mode: "insensitive" } } },
+        { variant: { sku: { contains: filters.search, mode: "insensitive" } } },
+        { variant: { barcode: { contains: filters.search, mode: "insensitive" } } },
         { warehouse: { name: { contains: filters.search, mode: "insensitive" } } },
         { warehouse: { code: { contains: filters.search, mode: "insensitive" } } },
       ];
@@ -1888,3 +1947,175 @@ export async function getItemsWithStockMovements(warehouseId?: string | null) {
     };
   }
 }
+
+/**
+ * Get all stocks matching filters for export (no pagination limit)
+ */
+export async function getAllStocksForExport(filters: {
+  itemId?: string;
+  warehouseId?: string;
+  search?: string;
+} = {}) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return { success: false, error: "Unauthorized", stocks: [] };
+    }
+
+    const canView = await hasPermission(session.user.id, "inventory.stock", "view");
+    if (!canView) {
+      return { success: false, error: "Permission denied", stocks: [] };
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true, defaultWarehouseId: true }
+    });
+
+    const where: Prisma.StockWhereInput = {};
+
+    if (filters.itemId) {
+      where.itemId = filters.itemId;
+    }
+
+    if (user && user.role !== "admin") {
+      where.warehouseId = user.defaultWarehouseId || "unassigned-no-match";
+      if (filters.warehouseId && filters.warehouseId !== user.defaultWarehouseId) {
+        where.warehouseId = "unassigned-no-match";
+      }
+    } else if (filters.warehouseId) {
+      where.warehouseId = filters.warehouseId;
+    }
+
+    where.AND = [
+      ...(filters.search
+        ? [
+            {
+              OR: [
+                { item: { name: { contains: filters.search, mode: "insensitive" as const } } },
+                { item: { code: { contains: filters.search, mode: "insensitive" as const } } },
+                { item: { barcode: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { sku: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { barcode: { contains: filters.search, mode: "insensitive" as const } } },
+                { variant: { item: { name: { contains: filters.search, mode: "insensitive" as const } } } },
+                { variant: { item: { code: { contains: filters.search, mode: "insensitive" as const } } } },
+                { variant: { item: { barcode: { contains: filters.search, mode: "insensitive" as const } } } },
+                { warehouse: { name: { contains: filters.search, mode: "insensitive" as const } } },
+                { warehouse: { code: { contains: filters.search, mode: "insensitive" as const } } },
+              ],
+            },
+          ]
+        : []),
+      {
+        OR: [
+          {
+            item: {
+              isTrash: false,
+              status: "active",
+              trackInventory: true,
+            },
+          },
+          {
+            variant: {
+              item: {
+                isTrash: false,
+                status: "active",
+                trackInventory: true,
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    const stocks = await prisma.stock.findMany({
+      where,
+      include: {
+        item: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            itemType: true,
+            costPrice: true,
+            salesPrice: true,
+            wholesalePrice: true,
+            category: { select: { name: true } },
+            unit: { select: { symbol: true } },
+          },
+        },
+        variant: {
+          select: {
+            id: true,
+            sku: true,
+            costPrice: true,
+            salesPrice: true,
+            wholesalePrice: true,
+            item: {
+              select: {
+                name: true,
+                code: true,
+                itemType: true,
+                salesPrice: true,
+                wholesalePrice: true,
+                category: { select: { name: true } },
+                unit: { select: { symbol: true } },
+              },
+            },
+          },
+        },
+        warehouse: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+      },
+      orderBy: [
+        { warehouse: { name: "asc" } },
+      ],
+    });
+
+    const serializedStocks = stocks.map((stock) => {
+      const quantity = Number(stock.quantity);
+      const reservedQuantity = Number(stock.reservedQuantity);
+      
+      const costPrice = Number(
+        stock.variant?.costPrice || stock.item?.costPrice || 0
+      );
+      const salesPrice = Number(
+        stock.variant?.salesPrice || stock.item?.salesPrice || stock.variant?.item?.salesPrice || 0
+      );
+      const wholesalePrice = Number(
+        stock.variant?.wholesalePrice || stock.item?.wholesalePrice || stock.variant?.item?.wholesalePrice || 0
+      );
+
+      const totalCostValue = quantity * costPrice;
+      const totalSalesValue = quantity * salesPrice;
+      const totalWholesaleValue = quantity * wholesalePrice;
+
+      return {
+        ...stock,
+        quantity,
+        reservedQuantity,
+        costPrice,
+        totalCostValue,
+        salesPrice,
+        totalSalesValue,
+        wholesalePrice,
+        totalWholesaleValue,
+      };
+    });
+
+    return { success: true, stocks: serializedStocks };
+  } catch (error) {
+    console.error("getAllStocksForExport error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch stocks for export",
+      stocks: [],
+    };
+  }
+}
+

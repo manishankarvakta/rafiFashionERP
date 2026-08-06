@@ -6,6 +6,7 @@ import Link from "next/link";
 import { FiPlus } from "react-icons/fi";
 import ResignationList from "./_components/resignation-list";
 import ResignationFormPrintButton from "./_components/resignation-form-print-button";
+import ExportResignationButton from "./_components/ExportResignationButton";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { ResignationStatus } from "@prisma/client";
@@ -15,12 +16,14 @@ interface ResignationPageProps {
     page?: string;
     search?: string;
     status?: string;
+    limit?: string;
   }>;
 }
 
 export default async function ResignationPage({ searchParams }: ResignationPageProps) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
+  const limit = parseInt(params.limit || "20");
   const search = params.search || "";
   const statusParam = params.status || "ALL";
 
@@ -28,7 +31,7 @@ export default async function ResignationPage({ searchParams }: ResignationPageP
   const userId = session?.user?.id;
 
   const [result, canView, canEdit, canApprove] = await Promise.all([
-    getResignations(page, 10, search, statusParam as any),
+    getResignations(page, limit, search, statusParam as any),
     userId ? hasPermission(userId, "hr.resignation", "view") : false,
     userId ? hasPermission(userId, "hr.resignation", "edit") : false,
     userId ? hasPermission(userId, "hr.resignation", "approve") : false,
@@ -57,6 +60,7 @@ export default async function ResignationPage({ searchParams }: ResignationPageP
           <p className="text-sm text-muted-foreground">Manage employee resignation requests and offboarding status</p>
         </div>
         <div className="flex gap-2">
+          <ExportResignationButton search={search} status={statusParam} />
           <ResignationFormPrintButton />
           {canEdit && (
             <Button asChild>
@@ -91,7 +95,7 @@ export default async function ResignationPage({ searchParams }: ResignationPageP
         <TabsContent value={statusParam} className="mt-4">
           <ResignationList
             initialResignations={(result.resignations as any) || []}
-            initialPagination={result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }}
+            initialPagination={result.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }}
             initialSearch={search}
             userId={userId}
             permissions={{

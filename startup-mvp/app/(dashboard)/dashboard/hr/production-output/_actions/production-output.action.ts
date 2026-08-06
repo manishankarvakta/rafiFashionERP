@@ -195,7 +195,7 @@ export async function saveEmployeeDailyOutput(
           targetProduction,
           piecesProduced,
           notes,
-          createdBy: userId,
+          createdById: userId,
         },
       });
     } else {
@@ -207,7 +207,7 @@ export async function saveEmployeeDailyOutput(
           targetProduction,
           piecesProduced,
           notes,
-          createdBy: userId,
+          createdById: userId,
         },
       });
     }
