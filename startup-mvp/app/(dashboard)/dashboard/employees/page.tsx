@@ -2,6 +2,7 @@ import React from "react";
 import { getEmployees, getEmployeeStats } from "./_actions/employee.action";
 import { getEmployeeTypes } from "./types/_actions/employee-type.action";
 import { getDepartments } from "./departments/_actions/department.action";
+import { getDesignationsByDepartment } from "./_actions/designation.action";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
@@ -23,6 +24,7 @@ interface EmployeesPageProps {
     gender?: string;
     status?: string;
     departmentId?: string;
+    designation?: string;
   }>;
 }
 
@@ -35,6 +37,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const gender = params.gender || "all";
   const statusParam = params.status || "all";
   const departmentId = params.departmentId || "all";
+  const designation = params.designation || "all";
 
   const session = await auth();
   const userId = session?.user?.id;
@@ -42,11 +45,12 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const status = tab === "trash" ? "trash" : (statusParam as any);
   
   // Check permissions and fetch data concurrently
-  const [result, statsResult, typesResult, departmentsResult, canView, canEdit, canCreate, canMoveToTrash, canDeletePermanently, canViewLedger] = await Promise.all([
-    getEmployees(page, 10, search, status, employeeTypeId, gender, departmentId),
+  const [result, statsResult, typesResult, departmentsResult, designationsResult, canView, canEdit, canCreate, canMoveToTrash, canDeletePermanently, canViewLedger] = await Promise.all([
+    getEmployees(page, 10, search, status, employeeTypeId, gender, departmentId, designation),
     getEmployeeStats(),
     getEmployeeTypes(1, 100, "", "active"),
     getDepartments(1, 100, "", "active"),
+    getDesignationsByDepartment(departmentId),
     userId ? hasPermission(userId, "peoples.employees", "view") : false,
     userId ? hasPermission(userId, "peoples.employees", "edit") : false,
     userId ? hasPermission(userId, "peoples.employees", "create") : false,
@@ -75,6 +79,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   }
 
   const employeeTypes = typesResult.success && typesResult.employeeTypes ? typesResult.employeeTypes : [];
+  const designations = designationsResult.success && designationsResult.designations ? designationsResult.designations : [];
 
   return (
     <PageGuard permissionKey="peoples.employees">
@@ -162,6 +167,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
                   employeeTypeId,
                   gender,
                   departmentId,
+                  designation,
                 }}
               />
             </div>
@@ -184,6 +190,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               status={statusParam}
               departments={departmentsResult.success && departmentsResult.departments ? (departmentsResult.departments as any[]) : []}
               departmentId={departmentId}
+              designations={designations}
+              designation={designation}
               permissions={{
                 view: canView,
                 edit: canEdit,
@@ -211,6 +219,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               status={statusParam}
               departments={departmentsResult.success && departmentsResult.departments ? (departmentsResult.departments as any[]) : []}
               departmentId={departmentId}
+              designations={designations}
+              designation={designation}
               permissions={{
                 view: canView,
                 edit: canEdit,

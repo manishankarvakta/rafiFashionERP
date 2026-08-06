@@ -32,6 +32,7 @@ interface ExportButtonsProps {
     employeeTypeId?: string;
     gender?: string;
     departmentId?: string;
+    designation?: string;
   };
 }
 

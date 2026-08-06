@@ -222,6 +222,7 @@ export const MODULES: Record<Module, ModuleMetadata> = {
       { id: "loans", label: "Loans", path: "/dashboard/hr/loans", module: "hr", permissionKey: "hr.loans" },
       { id: "fines", label: "Fines & Penalties", path: "/dashboard/hr/fines", module: "hr", permissionKey: "hr.fines" },
       { id: "bonuses", label: "Bonuses & Rewards", path: "/dashboard/hr/bonuses", module: "hr", permissionKey: "hr.bonuses" },
+      { id: "production-output", label: "Production Output", path: "/dashboard/hr/production-output", module: "hr", permissionKey: "hr.production-output" },
     ],
   },
   notifications: {
@@ -260,6 +261,7 @@ export const MODULES: Record<Module, ModuleMetadata> = {
       { id: "stock", label: "Stock", path: "/dashboard/inventory/stock", module: "inventory", permissionKey: "inventory.stock" },
       { id: "adjustments", label: "Adjustments", path: "/dashboard/inventory/adjustments", module: "inventory", permissionKey: "inventory.adjustments" },
       { id: "damage", label: "Damage", path: "/dashboard/inventory/damage", module: "inventory", permissionKey: "inventory.damage" },
+      { id: "stock-out", label: "Stock Out", path: "/dashboard/inventory/stock-out", module: "inventory", permissionKey: "inventory.stock-out" },
       { id: "count-scanner", label: "Count Scanner", path: "/dashboard/inventory/count", module: "inventory", permissionKey: "inventory.count.scanner" },
       { id: "count-entries", label: "All Count Entries", path: "/dashboard/inventory/count/entries", module: "inventory", permissionKey: "inventory.count.entries" },
       { id: "count-adjustment", label: "Auto Adjustment", path: "/dashboard/inventory/count/adjustment", module: "inventory", permissionKey: "inventory.count.adjustment" },
@@ -775,6 +777,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
         operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
       },
       {
+        permissionKey: "hr.production-output",
+        path: "/dashboard/hr/production-output",
+        label: "Production Output",
+        operations: ["create", "view", "edit"],
+      },
+      {
         permissionKey: "hr.biometric.view",
         path: "/dashboard/hr/biometric/devices",
         label: "Biometric Devices",
@@ -916,6 +924,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
         permissionKey: "inventory.damage",
         path: "/dashboard/inventory/damage",
         label: "Damage",
+        operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
+      },
+      {
+        permissionKey: "inventory.stock-out",
+        path: "/dashboard/inventory/stock-out",
+        label: "Stock Out",
         operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
       },
       {

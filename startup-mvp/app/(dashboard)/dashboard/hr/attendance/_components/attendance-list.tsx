@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { FiSearch, FiCheckSquare, FiAlertCircle, FiEdit } from "react-icons/fi";
 import { processBulkAttendance } from "../_actions/attendance.action";
-import { getWarehouses } from "../../../master/warehouses/_actions/warehouse.action";
+import { getProductionLines } from "../../../employees/_actions/production-line.action";
 import { getEmployees } from "../../../employees/_actions/employee.action";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -73,7 +73,7 @@ interface AttendanceListClientProps {
     page: number;
     limit: number;
     search: string;
-    warehouseId: string;
+    productionLineId: string;
     deviceId: string;
     employeeId: string;
     fromDate: string;
@@ -113,16 +113,16 @@ export default function AttendanceListClient({
 
   // Local state for filters to allow debouncing/explicit search triggers
   const [localFilters, setLocalFilters] = useState(filters);
-  const [warehouses, setWarehouses] = useState<{id: string, name: string}[]>([]);
+  const [productionLines, setProductionLines] = useState<{id: string, name: string, code: string}[]>([]);
   const [employees, setEmployees] = useState<{id: string, name: string, employeeCode: string | null}[]>([]);
 
   useEffect(() => {
     async function loadDropdowns() {
-      const [whRes, empRes] = await Promise.all([
-        getWarehouses(1, 100),
+      const [lineRes, empRes] = await Promise.all([
+        getProductionLines(),
         getEmployees(1, 1000)
       ]);
-      if (whRes.success && whRes.warehouses) setWarehouses(whRes.warehouses);
+      if (lineRes.success && lineRes.lines) setProductionLines(lineRes.lines);
       if (empRes.success && empRes.employees) setEmployees(empRes.employees);
     }
     loadDropdowns();
@@ -136,7 +136,7 @@ export default function AttendanceListClient({
     if (updated.page > 1) params.set("page", updated.page.toString());
     if (updated.limit !== 10) params.set("limit", updated.limit.toString());
     if (updated.search) params.set("search", updated.search);
-    if (updated.warehouseId && updated.warehouseId !== "all") params.set("warehouseId", updated.warehouseId);
+    if (updated.productionLineId && updated.productionLineId !== "all") params.set("productionLineId", updated.productionLineId);
     if (updated.employeeId && updated.employeeId !== "all") params.set("employeeId", updated.employeeId);
     if (updated.fromDate) params.set("fromDate", updated.fromDate);
     if (updated.toDate) params.set("toDate", updated.toDate);
@@ -150,7 +150,7 @@ export default function AttendanceListClient({
 
   const resetFilters = useCallback(() => {
     const todayStr = format(new Date(), "yyyy-MM-dd");
-    setLocalFilters({ page: 1, limit: 10, search: "", warehouseId: "", deviceId: "", employeeId: "", status: "ALL", fromDate: todayStr, toDate: todayStr });
+    setLocalFilters({ page: 1, limit: 10, search: "", productionLineId: "", deviceId: "", employeeId: "", status: "ALL", fromDate: todayStr, toDate: todayStr });
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}`);
     });
@@ -159,7 +159,7 @@ export default function AttendanceListClient({
 
   const handleProcessBulk = () => {
     startTransition(async () => {
-      const result = await processBulkAttendance(localFilters.fromDate, localFilters.warehouseId === "all" ? undefined : localFilters.warehouseId);
+      const result = await processBulkAttendance(localFilters.fromDate, localFilters.productionLineId === "all" ? undefined : localFilters.productionLineId);
       if (result.success) {
         toast({ title: "Success", description: `Processed ${result.count} un-punched attendances as ABSENT.` });
       } else {
@@ -216,14 +216,15 @@ export default function AttendanceListClient({
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-[200px]">
-            <label className="text-xs font-semibold text-muted-foreground">Warehouse</label>
+            <label className="text-xs font-semibold text-muted-foreground">Production Line</label>
             <SearchableSelect 
-              value={localFilters.warehouseId || "all"} 
-              onValueChange={(val) => pushFilters({ warehouseId: val || "all" })}
-              placeholder="All Warehouses"
+              value={localFilters.productionLineId || "all"} 
+              onValueChange={(val) => pushFilters({ productionLineId: val || "all" })}
+              placeholder="All Production Lines"
               options={[
-                { value: "all", label: "All Warehouses" },
-                ...warehouses.map(w => ({ value: w.id, label: w.name }))
+                { value: "all", label: "All Production Lines" },
+                { value: "none", label: "None (Not Assigned)" },
+                ...productionLines.map(l => ({ value: l.id, label: l.name }))
               ]}
             />
           </div>
@@ -239,6 +240,7 @@ export default function AttendanceListClient({
               </SelectTrigger>
               <SelectContent className="max-h-[250px]">
                 <SelectItem value="ALL">All Statuses</SelectItem>
+                <SelectItem value="ON_DUTY">On Duty (No Out Punch)</SelectItem>
                 <SelectItem value="PRESENT">Present</SelectItem>
                 <SelectItem value="ABSENT">Absent</SelectItem>
                 <SelectItem value="LATE">Late</SelectItem>

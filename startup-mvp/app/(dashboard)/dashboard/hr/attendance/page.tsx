@@ -13,7 +13,7 @@ interface AttendancePageProps {
     page?: string;
     limit?: string;
     search?: string;
-    warehouseId?: string;
+    productionLineId?: string;
     deviceId?: string;
     employeeId?: string;
     fromDate?: string;
@@ -28,7 +28,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const page = parseInt(params.page || "1", 10);
   const limit = parseInt(params.limit || "10", 10);
   const search = params.search || "";
-  const warehouseId = params.warehouseId || undefined;
+  const productionLineId = params.productionLineId || undefined;
   const deviceId = params.deviceId || undefined;
   const employeeId = params.employeeId || undefined;
   
@@ -47,7 +47,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
       page,
       limit,
       search,
-      warehouseId,
+      productionLineId,
       deviceId,
       employeeId,
       fromDate,
@@ -111,7 +111,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
           page,
           limit,
           search,
-          warehouseId: warehouseId || "",
+          productionLineId: productionLineId || "",
           deviceId: deviceId || "",
           employeeId: employeeId || "",
           fromDate,

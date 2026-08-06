@@ -141,6 +141,8 @@ interface EmployeesListClientProps {
   status?: string;
   departments?: { id: string; name: string }[];
   departmentId?: string;
+  designations?: string[];
+  designation?: string;
   permissions?: {
     view: boolean;
     edit: boolean;
@@ -162,6 +164,8 @@ export default function EmployeesListClient({
   status = "all",
   departments = [],
   departmentId = "all",
+  designations = [],
+  designation = "all",
   permissions,
 }: EmployeesListClientProps) {
   const router = useRouter();
@@ -172,7 +176,8 @@ export default function EmployeesListClient({
     (employeeTypeId && employeeTypeId !== "all") || 
     (gender && gender !== "all") || 
     (status && status !== "all") ||
-    (departmentId && departmentId !== "all")
+    (departmentId && departmentId !== "all") ||
+    (designation && designation !== "all")
   );
   const [deleteEmployeeId, setDeleteEmployeeId] = useState<string | null>(null);
   const [restoreEmployeeId, setRestoreEmployeeId] = useState<string | null>(null);
@@ -186,6 +191,9 @@ export default function EmployeesListClient({
       params.set(key, value);
     } else {
       params.delete(key);
+    }
+    if (key === "departmentId") {
+      params.delete("designation");
     }
     params.set("page", "1");
     router.push(`/dashboard/employees?${params.toString()}`);
@@ -388,6 +396,27 @@ export default function EmployeesListClient({
                 {departments.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
                     {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Designation Filter (Dependent on Department) */}
+          <div className="w-[180px]">
+            <Select
+              value={designation}
+              onValueChange={(val) => handleFilterChange("designation", val)}
+              disabled={departmentId === "all"}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={departmentId === "all" ? "Select Dept First" : "All Designations"} />
+              </SelectTrigger>
+              <SelectContent className="max-h-[250px]">
+                <SelectItem value="all">All Designations</SelectItem>
+                {designations.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {d}
                   </SelectItem>
                 ))}
               </SelectContent>
