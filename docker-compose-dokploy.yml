@@ -28,7 +28,7 @@ services:
       - docker-network
 
   # Next.js Application
-  rafierp-app:
+  rafi-app:
     build:
       context: ./startup-mvp
       dockerfile: Dockerfile

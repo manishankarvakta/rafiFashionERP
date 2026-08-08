@@ -23,7 +23,7 @@ services:
     networks:
       - docker-network
 
-  espacio-app:
+  rafi-app:
     build:
       context: ./startup-mvp
       dockerfile: Dockerfile
