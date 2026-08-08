@@ -99,7 +99,7 @@ export async function cleanupTempFiles(paths: string[]): Promise<void> {
  */
 export function getBackupTypeFromPath(filePath: string): BackupType | null {
   const normalizedPath = path.normalize(filePath);
-  
+
   if (normalizedPath.includes(path.sep + 'database' + path.sep)) {
     return 'database';
   }
@@ -109,7 +109,7 @@ export function getBackupTypeFromPath(filePath: string): BackupType | null {
   if (normalizedPath.includes(path.sep + 'full' + path.sep)) {
     return 'full';
   }
-  
+
   return null;
 }
 
@@ -154,7 +154,7 @@ export async function getAvailableDiskSpace(): Promise<number> {
     const { statfs } = await import('fs');
     const { promisify } = await import('util');
     const statfsAsync = promisify(statfs);
-    
+
     const stats = await statfsAsync(BACKUP_ROOT_DIR);
     return stats.bavail * stats.bsize;
   } catch (error) {
@@ -246,13 +246,13 @@ export async function retryWithBackoff<T>(
   initialDelay: number = 1000
 ): Promise<T> {
   let lastError: Error | undefined;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (attempt < maxRetries) {
         const delay = initialDelay * Math.pow(2, attempt);
         console.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
@@ -260,7 +260,7 @@ export async function retryWithBackoff<T>(
       }
     }
   }
-  
+
   throw lastError;
 }
 
@@ -299,8 +299,8 @@ export function now(): string {
  * 4. Returns the name/ID of the running container, or the configured name if none found.
  */
 export async function resolveDockerContainer(config: PostgresConfig): Promise<string> {
-  const configuredName = config.containerName || 'fferp-postgres';
-  
+  const configuredName = config.containerName || 'rafierp-postgres';
+
   try {
     // Check if the configured container is running
     const { stdout: isRunning } = await execAsync(

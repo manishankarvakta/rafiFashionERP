@@ -7,7 +7,7 @@ This document provides technical details about the Dokploy configuration and exp
 ## IMPORTANT: Database Migrations and Data Persistence
 
 ### 1. Data Persistence (Docker Named Volumes)
-The `docker-compose-dokploy.yml` uses **Docker Named Volumes** (e.g., `fferp-postgres-data`) instead of relative local bind mounts (`./volumes/postgres`).
+The `docker-compose-dokploy.yml` uses **Docker Named Volumes** (e.g., `rafierp-postgres-data`) instead of relative local bind mounts (`./volumes/postgres`).
 This is CRITICAL because Dokploy wipes out the local project folder (`./`) on every deployment. Named volumes ensure that your database, uploaded files, and Redis cache safely persist across all deployments.
 
 ### 2. Database Migrations
@@ -35,11 +35,11 @@ The `docker-compose-dokploy.yml` file has been optimized for Dokploy with the fo
 
 ### 3. Volume Management
 - **Local**: Uses bind mounts (`./volumes/postgres`, `./volumes/uploads`, etc.) in `docker-compose.yml`.
-- **Dokploy**: Uses named volumes (`fferp-postgres-data`, `fferp-uploads-data`, `fferp-redis-data`) for secure data persistence managed entirely by Docker.
+- **Dokploy**: Uses named volumes (`rafierp-postgres-data`, `rafierp-uploads-data`, `rafierp-redis-data`) for secure data persistence managed entirely by Docker.
 
 ### 4. Service Names
-- All services use the `fferp-` prefix for better organization.
-- Services: `fferp-postgres`, `fferp-app`, `fferp-redis`
+- All services use the `rafierp-` prefix for better organization.
+- Services: `rafierp-postgres`, `rafierp-app`, `rafierp-redis`
 
 ## Required Environment Variables in Dokploy
 
@@ -50,7 +50,7 @@ Set these environment variables in Dokploy's UI:
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your-secure-password
 POSTGRES_DB=startup_mvp
-DATABASE_URL=postgresql://postgres:your-secure-password@fferp-postgres:5432/startup_mvp?schema=public
+DATABASE_URL=postgresql://postgres:your-secure-password@rafierp-postgres:5432/startup_mvp?schema=public
 ```
 
 ### Application Configuration
@@ -66,7 +66,7 @@ NODE_ENV=production
 
 ### Redis Configuration (Optional)
 ```ini
-REDIS_URL=redis://fferp-redis:6379
+REDIS_URL=redis://rafierp-redis:6379
 ```
 
 ### Email Configuration
@@ -114,11 +114,11 @@ EMAIL_FROM_NAME=ffERP
 ## Troubleshooting
 
 ### Volume Issues / Data Not Saving
-If data is not saving, ensure that you have not accidentally reverted back to using `./volumes/postgres` in your compose file. Only Docker Named Volumes (`fferp-postgres-data`) persist correctly inside Dokploy.
+If data is not saving, ensure that you have not accidentally reverted back to using `./volumes/postgres` in your compose file. Only Docker Named Volumes (`rafierp-postgres-data`) persist correctly inside Dokploy.
 
 ### "Table does not exist" Errors
 If you see "Invalid prisma invocation: The table public.User does not exist in the current database":
-1. Verify that the `fferp-postgres-data` volume is correctly mounted.
+1. Verify that the `rafierp-postgres-data` volume is correctly mounted.
 2. Verify that you have generated local migrations (`npx prisma migrate dev`) and pushed the `prisma/migrations` folder to GitHub before deploying.
 
 ### Environment Variable Issues

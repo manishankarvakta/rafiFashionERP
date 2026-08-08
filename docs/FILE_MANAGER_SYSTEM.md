@@ -34,7 +34,7 @@ In `docker-compose.yml`, the application container maps a host directory to the 
 
 ```yaml
 services:
-  fferp-app:
+  rafierp-app:
     # ... other config
     volumes:
       - ./volumes/uploads:/app/uploads
@@ -120,5 +120,5 @@ const { key } = await context.params;
 ### Permission Denied (Docker)
 Ensure the Docker user has write access to the uploads volume:
 ```bash
-docker exec -u root fferp-app chown -R nextjs:nodejs /app/uploads
+docker exec -u root rafierp-app chown -R nextjs:nodejs /app/uploads
 ```
