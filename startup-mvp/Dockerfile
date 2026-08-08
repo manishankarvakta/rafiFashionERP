@@ -91,9 +91,6 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Fix permissions
-RUN chown -R nextjs:nodejs /app
-
 # Don't switch user yet - entrypoint will handle migrations as root, then switch to nextjs
 # USER nextjs
 
