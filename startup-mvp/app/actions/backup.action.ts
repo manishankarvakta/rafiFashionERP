@@ -882,7 +882,7 @@ export async function restoreBackup(
         };
       }
 
-      // Time travel: Delete all existing files from MinIO before restoring
+      // Time travel: Delete all existing files from local storage before restoring
       // This ensures we return to the exact state at backup time
         await updateProgress(opId, {
         stage: "Deleting existing files (time travel)...",

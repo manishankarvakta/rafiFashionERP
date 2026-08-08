@@ -186,7 +186,7 @@ export async function createDatabaseBackup(
 }
 
 /**
- * Create a files backup from MinIO
+ * Create a files backup from local storage
  * @param options - Backup creation options
  * @returns Backup metadata
  */

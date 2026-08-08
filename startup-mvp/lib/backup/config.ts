@@ -1,8 +1,8 @@
 /**
  * Backup System Configuration
  * 
- * Central configuration for backup operations including paths,
- * database settings, and MinIO configuration.
+ * Central configuration for backup operations including paths
+ * and database settings.
  */
 
 import path from 'path';

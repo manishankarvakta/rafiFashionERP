@@ -208,27 +208,18 @@ async function runTests() {
   console.log("\n📋 Files Backup Creation Tests\n");
 
   test("createFilesBackup creates encrypted backup when enabled", async () => {
-    // Note: This test requires MinIO to be running
-    // Skip if MinIO is not available
-    try {
-      const backupPath = await createFilesBackup();
-      testBackups.push(backupPath);
+    // Note: This test creates a backup of local files
+    const backupPath = await createFilesBackup();
+    testBackups.push(backupPath);
 
-      const isEncrypted = isEncryptedBackup(backupPath);
-      if (!isEncrypted) {
-        throw new Error("Backup was not encrypted");
-      }
+    const isEncrypted = isEncryptedBackup(backupPath);
+    if (!isEncrypted) {
+      throw new Error("Backup was not encrypted");
+    }
 
-      const metadata = await loadBackupMetadata(backupPath);
-      if (!metadata || !metadata.encrypted) {
-        throw new Error("Metadata not found or backup not marked as encrypted");
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("MinIO")) {
-        console.log("⚠️  Skipping files backup test (MinIO not available)");
-        return;
-      }
-      throw error;
+    const metadata = await loadBackupMetadata(backupPath);
+    if (!metadata || !metadata.encrypted) {
+      throw new Error("Metadata not found or backup not marked as encrypted");
     }
   });
 
@@ -238,26 +229,18 @@ async function runTests() {
   console.log("\n📋 Full Backup Creation Tests\n");
 
   test("createFullBackup creates encrypted backup when enabled", async () => {
-    // Note: This test requires MinIO to be running
-    try {
-      const backupPath = await createFullBackup();
-      testBackups.push(backupPath);
+    // Note: This test creates a full backup of database and local files
+    const backupPath = await createFullBackup();
+    testBackups.push(backupPath);
 
-      const isEncrypted = isEncryptedBackup(backupPath);
-      if (!isEncrypted) {
-        throw new Error("Backup was not encrypted");
-      }
+    const isEncrypted = isEncryptedBackup(backupPath);
+    if (!isEncrypted) {
+      throw new Error("Backup was not encrypted");
+    }
 
-      const metadata = await loadBackupMetadata(backupPath);
-      if (!metadata || !metadata.encrypted) {
-        throw new Error("Metadata not found or backup not marked as encrypted");
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("MinIO")) {
-        console.log("⚠️  Skipping full backup test (MinIO not available)");
-        return;
-      }
-      throw error;
+    const metadata = await loadBackupMetadata(backupPath);
+    if (!metadata || !metadata.encrypted) {
+      throw new Error("Metadata not found or backup not marked as encrypted");
     }
   });
 

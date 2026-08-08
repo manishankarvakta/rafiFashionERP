@@ -80,15 +80,6 @@ docker-compose up -d postgres
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/test_db?schema=public"
 ```
 
-### MinIO (for files/full backup tests)
-
-Files and full backup tests require MinIO:
-
-```bash
-# Start MinIO
-docker-compose up -d minio
-```
-
 ## Test Categories
 
 ### 1. Unit Tests (`test:unit`)
@@ -216,12 +207,6 @@ docker-compose up -d postgres
 ```bash
 # Solution: Ensure test directory has write permissions
 chmod -R 755 tests/
-```
-
-**Issue:** "MinIO not available"
-```bash
-# Solution: Start MinIO or skip files backup tests
-docker-compose up -d minio
 ```
 
 ## Continuous Integration

@@ -8,7 +8,7 @@ This checklist should be completed before deploying encrypted backups to product
 - [ ] Environment variables configured
 - [ ] Application restarted after configuration
 - [ ] Test database with sample data available
-- [ ] MinIO running (for files/full backup tests)
+- [ ] Upload directory is writable (for files/full backup tests)
 
 ## Configuration Tests
 
@@ -60,7 +60,7 @@ This checklist should be completed before deploying encrypted backups to product
 - [ ] Select encrypted files backup
 - [ ] Click "Restore" button
 - [ ] Verify restore completes successfully
-- [ ] Verify files are restored to MinIO
+- [ ] Verify files are restored to the upload directory
 - [ ] Check file count matches original
 
 ### Encrypted Full Backup
@@ -209,7 +209,7 @@ This checklist should be completed before deploying encrypted backups to product
 - [ ] Encrypted backup preserves relationships
 - [ ] Restored data matches original exactly
 
-### With MinIO
+### With Local Storage
 - [ ] Encrypted files backup preserves all files
 - [ ] Encrypted files backup preserves folder structure
 - [ ] Encrypted files backup preserves file metadata

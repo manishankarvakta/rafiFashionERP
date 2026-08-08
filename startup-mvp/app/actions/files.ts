@@ -1183,7 +1183,7 @@ export async function renameFileOrFolder(input: {
 
 /**
  * Get download URL for a file
- * Returns API proxy URL that fetches from MinIO internally
+ * Returns API proxy URL that fetches from local storage internally
  */
 export async function getDownloadUrl(input: {
   key: string;
@@ -1249,7 +1249,7 @@ export async function getDownloadUrl(input: {
 
 /**
  * Get public URL for a file
- * Returns API proxy URL that fetches from MinIO internally
+ * Returns API proxy URL that fetches from local storage internally
  */
 export async function getPublicUrl(input: {
   key: string;

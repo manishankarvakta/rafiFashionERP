@@ -54,15 +54,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   
-  // Configure images for external sources (MinIO)
+  // Configure images for external sources
   images: {
     remotePatterns: [
-      {
-        protocol: 'http',
-        hostname: 'localhost',
-        port: '9000',
-        pathname: '/**',
-      },
       {
         protocol: 'http',
         hostname: 'localhost',

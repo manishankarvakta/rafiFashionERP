@@ -235,8 +235,6 @@ export async function restoreFilesBackup(
 
     // Stage 4: RESTORING_FILES (40-90%)
     manager.updateStatus(restoreId, 'RESTORING_FILES', 'Restoring files to local storage');
-    
-    const minioConfig = null;
     let uploadedCount = 0;
 
     for (const [name, file] of entries) {
@@ -399,8 +397,6 @@ export async function restoreFullBackup(
     );
 
     manager.addLog(restoreId, `Found ${entries.length} files to restore`);
-
-    const minioConfig = null;
     let uploadedCount = 0;
 
     for (const [name, file] of entries) {

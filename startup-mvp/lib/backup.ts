@@ -411,8 +411,8 @@ export async function createDatabaseBackup(operationId?: string): Promise<string
 }
 
 /**
- * Create files backup from MinIO
- * Downloads all files and creates a ZIP archive
+ * Create files backup from local storage
+ * Reads all files and creates a ZIP archive
  */
 export async function createFilesBackup(): Promise<string> {
   await ensureBackupDirs();
