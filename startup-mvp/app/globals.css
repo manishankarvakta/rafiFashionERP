@@ -3,6 +3,7 @@
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));
+/*  */
 
 :root {
   --background: hsl(0 0% 100%);
