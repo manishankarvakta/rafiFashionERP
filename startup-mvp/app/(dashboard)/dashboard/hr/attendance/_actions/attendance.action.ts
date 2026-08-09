@@ -481,6 +481,8 @@ export async function getAttendanceRecordsPaginated({
   fromDate,
   toDate,
   status,
+  departmentId,
+  designation,
 }: {
   page?: number;
   limit?: number;
@@ -491,6 +493,8 @@ export async function getAttendanceRecordsPaginated({
   fromDate?: string;
   toDate?: string;
   status?: string;
+  departmentId?: string;
+  designation?: string;
 }) {
   try {
     const session = await auth();
@@ -532,6 +536,20 @@ export async function getAttendanceRecordsPaginated({
       } else {
         where.status = status as any;
       }
+    }
+
+    if (departmentId && departmentId !== "all") {
+      where.employee = {
+        ...((where.employee as any) || {}),
+        departmentId: departmentId,
+      };
+    }
+
+    if (designation && designation !== "all") {
+      where.employee = {
+        ...((where.employee as any) || {}),
+        designation: designation,
+      };
     }
 
     // Search by employee name or code

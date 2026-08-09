@@ -79,11 +79,15 @@ interface AttendanceListClientProps {
     fromDate: string;
     toDate: string;
     status: string;
+    departmentId: string;
+    designation: string;
   };
   permissions?: {
     view: boolean;
     edit: boolean;
   };
+  departments?: { id: string; name: string }[];
+  designations?: string[];
 }
 
 const formatHoursMinutes = (decimalHours: any) => {
@@ -106,6 +110,8 @@ export default function AttendanceListClient({
   pagination,
   filters,
   permissions,
+  departments = [],
+  designations = [],
 }: AttendanceListClientProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -130,6 +136,12 @@ export default function AttendanceListClient({
 
   const pushFilters = useCallback((newFilters: Partial<typeof filters>) => {
     const updated = { ...localFilters, ...newFilters, page: newFilters.page || 1 };
+    
+    // Clear designation if department changes
+    if (newFilters.hasOwnProperty("departmentId") && newFilters.departmentId !== localFilters.departmentId) {
+      updated.designation = "all";
+    }
+    
     setLocalFilters(updated);
     
     const params = new URLSearchParams();
@@ -142,6 +154,8 @@ export default function AttendanceListClient({
     if (updated.toDate) params.set("toDate", updated.toDate);
     if (updated.status && updated.status !== "ALL") params.set("status", updated.status);
     if (updated.deviceId) params.set("deviceId", updated.deviceId);
+    if (updated.departmentId && updated.departmentId !== "all") params.set("departmentId", updated.departmentId);
+    if (updated.designation && updated.designation !== "all") params.set("designation", updated.designation);
 
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?${params.toString()}`);
@@ -150,7 +164,19 @@ export default function AttendanceListClient({
 
   const resetFilters = useCallback(() => {
     const todayStr = format(new Date(), "yyyy-MM-dd");
-    setLocalFilters({ page: 1, limit: 10, search: "", productionLineId: "", deviceId: "", employeeId: "", status: "ALL", fromDate: todayStr, toDate: todayStr });
+    setLocalFilters({
+      page: 1,
+      limit: 10,
+      search: "",
+      productionLineId: "",
+      deviceId: "",
+      employeeId: "",
+      status: "ALL",
+      fromDate: todayStr,
+      toDate: todayStr,
+      departmentId: "all",
+      designation: "all"
+    });
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}`);
     });
@@ -227,6 +253,47 @@ export default function AttendanceListClient({
                 ...productionLines.map(l => ({ value: l.id, label: l.name }))
               ]}
             />
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-muted-foreground">Department</label>
+            <Select 
+              value={localFilters.departmentId || "all"} 
+              onValueChange={(val) => pushFilters({ departmentId: val })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Departments" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[250px]">
+                <SelectItem value="all">All Departments</SelectItem>
+                {departments.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-muted-foreground">Designation</label>
+            <Select 
+              value={localFilters.designation || "all"} 
+              onValueChange={(val) => pushFilters({ designation: val })}
+              disabled={localFilters.departmentId === "all" || !localFilters.departmentId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={(localFilters.departmentId === "all" || !localFilters.departmentId) ? "Select Dept First" : "All Designations"} />
+              </SelectTrigger>
+              <SelectContent className="max-h-[250px]">
+                <SelectItem value="all">All Designations</SelectItem>
+                {designations.map((d) => (
+                  <SelectItem key={d} value={d}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-[160px]">
