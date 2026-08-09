@@ -8,6 +8,8 @@ import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import BiometricSyncButton from "./_components/biometric-sync-button";
 import { getPayrollSettings } from "@/lib/payroll-settings";
+import { getDepartments } from "../../employees/departments/_actions/department.action";
+import { getDesignationsByDepartment } from "../../employees/_actions/designation.action";
 
 interface AttendancePageProps {
   searchParams: Promise<{
@@ -20,6 +22,8 @@ interface AttendancePageProps {
     fromDate?: string;
     toDate?: string;
     status?: string;
+    departmentId?: string;
+    designation?: string;
   }>;
 }
 
@@ -32,6 +36,8 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const warehouseId = params.warehouseId || undefined;
   const deviceId = params.deviceId || undefined;
   const employeeId = params.employeeId || undefined;
+  const departmentId = params.departmentId || undefined;
+  const designation = params.designation || undefined;
   
   // Set default date range if not provided (e.g. today)
   const today = new Date().toISOString().split("T")[0];
@@ -42,8 +48,8 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const session = await auth();
   const userId = session?.user?.id;
 
-  // Check permissions & settings
-  const [result, canView, canEdit, payrollSettings] = await Promise.all([
+  // Check permissions, settings, and fetch department/designation lists concurrently
+  const [result, departmentsResult, designationsResult, canView, canEdit, payrollSettings] = await Promise.all([
     getAttendanceRecordsPaginated({
       page,
       limit,
@@ -53,8 +59,12 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
       employeeId,
       fromDate,
       toDate,
-      status
+      status,
+      departmentId,
+      designation
     }),
+    getDepartments(1, 100, "", "active"),
+    getDesignationsByDepartment(departmentId),
     userId ? hasPermission(userId, "hr.attendance", "view") : false,
     userId ? hasPermission(userId, "hr.attendance", "edit") : false,
     getPayrollSettings(),
@@ -77,6 +87,9 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
       </div>
     );
   }
+
+  const departments = departmentsResult.success && departmentsResult.departments ? (departmentsResult.departments as any[]) : [];
+  const designations = designationsResult.success && designationsResult.designations ? designationsResult.designations : [];
 
   return (
     <div className="space-y-6">
@@ -109,6 +122,8 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
       <AttendanceListClient
         initialAttendances={result.attendances || []}
         pagination={result.pagination || { page: 1, limit: 20, total: 0, pages: 0 }}
+        departments={departments}
+        designations={designations}
         filters={{
           page,
           limit,
@@ -119,6 +134,8 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
           fromDate,
           toDate,
           status: status || "ALL",
+          departmentId: departmentId || "all",
+          designation: designation || "all",
         }}
         permissions={{
           view: canView,
