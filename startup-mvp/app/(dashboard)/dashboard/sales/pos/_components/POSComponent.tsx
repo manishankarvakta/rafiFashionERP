@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { FaSearch, FaHandPaper, FaSync, FaPrint, FaPlus, FaMinus, FaTrashAlt, FaShoppingCart, FaCheckCircle, FaTimes, FaUndoAlt, FaShoppingBag, FaIndustry, FaTicketAlt, FaCreditCard, FaMoneyBillWave, FaMobileAlt, FaUsers, FaGlassCheers } from "react-icons/fa";
-import { createSale, getClientItemDiscounts, validateCoupon, voidSale, processSaleReturn, getLastSaleForUser, getSaleByNumber, getSalesByCustomer } from "../../_actions/sale.action";
+import { FaSearch, FaHandPaper, FaSync, FaPrint, FaPlus, FaMinus, FaTrashAlt, FaShoppingCart, FaCheckCircle, FaTimes, FaUndoAlt, FaShoppingBag, FaIndustry, FaTicketAlt, FaCreditCard, FaMoneyBillWave, FaMobileAlt, FaUsers, FaGlassCheers, FaExclamationTriangle, FaBoxOpen, FaExchangeAlt, FaArrowLeft } from "react-icons/fa";
+import { createSale, getClientItemDiscounts, validateCoupon, voidSale, processSaleReturn, processSaleExchange, getLastSaleForUser, getSaleByNumber, getSalesByCustomer } from "../../_actions/sale.action";
 import { getOutstandingSales, collectCustomerDue } from "../../_actions/due-payment.action";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToastContext } from "@/components/ui/providers/toast-provider";
+import { toast as sonnerToast } from "sonner";
 import { createClient } from "@/app/(dashboard)/dashboard/clients/_actions/client.action";
 import { getMembershipSettingsAction } from "@/app/(dashboard)/dashboard/settings/_actions/membership-settings.action";
 import { getMembershipTiers } from "@/app/(dashboard)/dashboard/settings/_actions/membership-tier.action";
@@ -90,6 +91,8 @@ interface CartItem extends Item {
   size?: string;
   color?: string;
   cartKey: string;
+  isReturnItem?: boolean;
+  originalSaleId?: string;
 }
 
 interface ActiveSalesman {
@@ -130,6 +133,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
   
   const [clients, setClients] = useState<Client[]>(initialClients);
 
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("ALL");
   
@@ -217,6 +221,8 @@ export default function POSComponent({ items, clients: initialClients, warehouse
   const [lumpSumAmount, setLumpSumAmount] = useState<number>(0);
   const [invoiceAllocations, setInvoiceAllocations] = useState<Record<string, number>>({});
   const [isSubmittingDuePayment, setIsSubmittingDuePayment] = useState(false);
+  const [previousCustomerDue, setPreviousCustomerDue] = useState<number>(0);
+  const [isExchangeMode, setIsExchangeMode] = useState(false);
 
   // Filter payment methods based on selected warehouse
   const filteredPaymentAccounts = useMemo(() => {
@@ -298,6 +304,21 @@ export default function POSComponent({ items, clients: initialClients, warehouse
   }, [cashAmount, cardAmount, mfsAmount]);
 
   useEffect(() => {
+    if (selectedClientId) {
+      getOutstandingSales(selectedClientId).then(res => {
+        if (res.success && res.sales) {
+          const totalPrev = res.sales.reduce((sum, s) => sum + Number(s.remainingDue || 0), 0);
+          setPreviousCustomerDue(totalPrev);
+        } else {
+          setPreviousCustomerDue(0);
+        }
+      }).catch(() => setPreviousCustomerDue(0));
+    } else {
+      setPreviousCustomerDue(0);
+    }
+  }, [selectedClientId, isConfirmModalOpen]);
+
+  useEffect(() => {
     if (payDueClientId) {
       getOutstandingSales(payDueClientId).then(res => {
         if (res.success && res.sales) {
@@ -347,18 +368,30 @@ export default function POSComponent({ items, clients: initialClients, warehouse
   const [customerSales, setCustomerSales] = useState<any[]>([]);
   const [isFetchingCustomerSales, setIsFetchingCustomerSales] = useState(false);
 
+  const [returnSearchError, setReturnSearchError] = useState<string | null>(null);
+
   useEffect(() => {
     if (returnMode === "customer" && returnCustomerId) {
       setIsFetchingCustomerSales(true);
-      getSalesByCustomer(returnCustomerId).then(res => {
-        if(res.success) setCustomerSales(res.sales || []);
-        else toast({ title: "Error", description: "Could not fetch sales", variant: "destructive" });
+      setReturnSearchError(null);
+      setReturnSaleDetails(null);
+      getSalesByCustomer(returnCustomerId, orderType).then(res => {
+        if(res.success) {
+          const sales = res.sales || [];
+          setCustomerSales(sales);
+          if (sales.length === 0) {
+            setReturnSearchError(`No completed invoices found for this customer in ${orderType} mode.`);
+          }
+        } else {
+          toast({ title: "Error", description: "Could not fetch sales", variant: "destructive" });
+          setReturnSearchError(res.error || "Failed to fetch customer sales");
+        }
         setIsFetchingCustomerSales(false);
       });
     } else {
       setCustomerSales([]);
     }
-  }, [returnMode, returnCustomerId]);
+  }, [returnMode, returnCustomerId, orderType]);
 
   const [actionSaleNumber, setActionSaleNumber] = useState('');
   const [returnSaleDetails, setReturnSaleDetails] = useState<any>(null);
@@ -696,13 +729,30 @@ export default function POSComponent({ items, clients: initialClients, warehouse
     }
   }, [searchQuery, filteredItems.length, itemsHiddenDueToStock, selectedWarehouseId]);
 
-  const subTotal = cart.reduce((sum, item) => sum + item.unitPrice * item.cartQuantity, 0);
-  const itemVatTotal = cart.reduce((sum, item) => {
-    if (item.isVatEnabled && item.vatPercentage) {
-      return sum + (item.unitPrice * item.cartQuantity) * (item.vatPercentage / 100);
-    }
-    return sum;
-  }, 0);
+  const sortedCart = useMemo(() => {
+    return [...cart].sort((a, b) => {
+      if (a.isReturnItem && !b.isReturnItem) return -1;
+      if (!a.isReturnItem && b.isReturnItem) return 1;
+      return 0;
+    });
+  }, [cart]);
+
+  const subTotal = useMemo(() => {
+    return cart.reduce((sum, item) => {
+      const lineVal = item.unitPrice * item.cartQuantity;
+      return sum + (item.isReturnItem ? -lineVal : lineVal);
+    }, 0);
+  }, [cart]);
+
+  const itemVatTotal = useMemo(() => {
+    return cart.reduce((sum, item) => {
+      if (item.isVatEnabled && item.vatPercentage) {
+        const lineVal = (item.unitPrice * item.cartQuantity) * (item.vatPercentage / 100);
+        return sum + (item.isReturnItem ? -lineVal : lineVal);
+      }
+      return sum;
+    }, 0);
+  }, [cart]);
   const manualDiscountAmount = discountType === "PERCENTAGE"
     ? Number((subTotal * (discountValue / 100)).toFixed(2))
     : discountValue;
@@ -796,6 +846,11 @@ export default function POSComponent({ items, clients: initialClients, warehouse
       }
       return [...prev, itemToAdd];
     });
+
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+      searchInputRef.current.select();
+    }
   };
 
   const handleVariantAddToCart = (item: Item, variant: ItemVariant, quantity: number = 1) => {
@@ -871,6 +926,11 @@ export default function POSComponent({ items, clients: initialClients, warehouse
       }
       return [...prev, itemToAdd];
     });
+
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+      searchInputRef.current.select();
+    }
   };
 
   const handleUpdateQuantity = (cartKey: string, delta: number) => {
@@ -1238,20 +1298,154 @@ export default function POSComponent({ items, clients: initialClients, warehouse
     }
   };
 
+  const handleAddReturnItemsToCart = () => {
+    const validReturnItems = returnItemsState.filter((r) => r.returnQty > 0);
+    if (validReturnItems.length === 0) {
+      toast({ title: "Warning", description: "No items selected for return.", variant: "destructive" });
+      return;
+    }
+
+    const newCartEntries: CartItem[] = [];
+
+    for (const rState of validReturnItems) {
+      const item = items.find((i) => i.id === rState.itemId);
+      if (item) {
+        let variant: ItemVariant | undefined;
+        if (rState.variantId && item.variants) {
+          variant = item.variants.find((v) => v.id === rState.variantId);
+        }
+
+        const displayPrice = variant ? Number(variant.salesPrice || item.unitPrice) : Number(item.unitPrice);
+        const cartKey = `${item.id}-${rState.variantId || "base"}-return`;
+
+        newCartEntries.push({
+          ...item,
+          cartQuantity: rState.returnQty,
+          variantId: rState.variantId,
+          variantSku: variant?.sku,
+          size: variant?.size,
+          color: variant?.color,
+          unitPrice: displayPrice,
+          cartKey,
+          isReturnItem: true,
+          originalSaleId: returnSaleDetails?.id,
+        });
+      } else if (returnSaleDetails && returnSaleDetails.items) {
+        const detailItem = returnSaleDetails.items.find(
+          (i: any) => i.itemId === rState.itemId && (rState.variantId ? i.variantId === rState.variantId : !i.variantId)
+        );
+        if (detailItem) {
+          const cartKey = `${detailItem.itemId}-${detailItem.variantId || "base"}-return`;
+          newCartEntries.push({
+            id: detailItem.itemId,
+            code: detailItem.code || "RET",
+            name: detailItem.description,
+            description: detailItem.description,
+            itemType: "RETAIL",
+            trackInventory: true,
+            unitId: detailItem.unitId || "",
+            cartQuantity: rState.returnQty,
+            variantId: detailItem.variantId || undefined,
+            variantSku: detailItem.variantSku || undefined,
+            size: detailItem.size || undefined,
+            color: detailItem.color || undefined,
+            unitPrice: Number(detailItem.unitPrice),
+            cartKey,
+            isReturnItem: true,
+            originalSaleId: returnSaleDetails.id,
+          } as any);
+        }
+      }
+    }
+
+    if (newCartEntries.length === 0) {
+      toast({ title: "Warning", description: "No valid return items found to add.", variant: "destructive" });
+      return;
+    }
+
+    setCart((prev) => {
+      const nonReturn = prev.filter((i) => !i.isReturnItem);
+      return [...nonReturn, ...newCartEntries];
+    });
+
+    if (returnSaleDetails?.clientId) {
+      setSelectedClientId(returnSaleDetails.clientId);
+    } else if (returnCustomerId) {
+      setSelectedClientId(returnCustomerId);
+    }
+
+    setIsExchangeMode(true);
+    setIsReturnModalOpen(false);
+    setReturnItemsState([]);
+    setReturnSaleDetails(null);
+    sonnerToast.success(`Exchange Items Added: ${newCartEntries.length} returned item(s) added to cart. Select new items from catalog.`, {
+      position: "bottom-right",
+    });
+  };
+
   const handleFetchSaleForReturn = async (saleNum?: any) => {
     const saleNumberToFetch = (typeof saleNum === "string" && saleNum) ? saleNum : actionSaleNumber;
     if(!saleNumberToFetch) return toast({ title: "Error", description: "Sale Number is required", variant: "destructive" });
     setIsFetchingSale(true);
+    setReturnSearchError(null);
     try {
       const res = await getSaleByNumber(saleNumberToFetch);
       if (res.success && res.sale) {
-        setReturnSaleDetails(res.sale);
-        setReturnItemsState(res.sale.items.map((i: any) => ({ itemId: i.itemId, variantId: i.variantId || undefined, maxQty: Number(i.quantity), returnQty: 0 })));
+        const saleData = res.sale as any;
+        const isClientWholesale = !!(
+          saleData.client?.clientType === "wholesale" ||
+          saleData.client?.company?.toLowerCase().includes("wholesale") ||
+          saleData.client?.name?.toLowerCase().includes("wholesale") ||
+          saleData.client?.email?.toLowerCase().includes("wholesale") ||
+          saleData.client?.clientCode?.toLowerCase().includes("wholesale")
+        );
+        const hasWholesaleItems = saleData.items?.some((i: any) => i.item?.itemType === "WHOLESALE");
+        const isSaleWholesale = saleData.orderType === "WHOLESALE" || isClientWholesale || hasWholesaleItems;
+        const isCurrentWholesale = orderType === "WHOLESALE";
+
+        if (isCurrentWholesale && !isSaleWholesale) {
+          const msg = `Mode Mismatch: Invoice ${saleNumberToFetch} is a Retail invoice. Please switch POS mode to Retail to return this invoice.`;
+          toast({
+            title: "Mode Mismatch",
+            description: msg,
+            variant: "destructive"
+          });
+          setReturnSearchError(msg);
+          setReturnSaleDetails(null);
+          setReturnItemsState([]);
+          setIsFetchingSale(false);
+          return;
+        } else if (!isCurrentWholesale && isSaleWholesale) {
+          const msg = `Mode Mismatch: Invoice ${saleNumberToFetch} is a Wholesale invoice. Please switch POS mode to Wholesale to return this invoice.`;
+          toast({
+            title: "Mode Mismatch",
+            description: msg,
+            variant: "destructive"
+          });
+          setReturnSearchError(msg);
+          setReturnSaleDetails(null);
+          setReturnItemsState([]);
+          setIsFetchingSale(false);
+          return;
+        }
+        setReturnSearchError(null);
+        setReturnSaleDetails(saleData);
+        setReturnItemsState(saleData.items.map((i: any) => ({ itemId: i.itemId, variantId: i.variantId || undefined, maxQty: Number(i.quantity), returnQty: 0 })));
+        if (saleData.clientId) {
+          setSelectedClientId(saleData.clientId);
+          setReturnCustomerId(saleData.clientId);
+        }
       } else {
-        toast({ title: "Not Found", description: res.error || "Sale not found", variant: "destructive" });
+        const msg = res.error || `Invoice "${saleNumberToFetch}" not found.`;
+        toast({ title: "Not Found", description: msg, variant: "destructive" });
+        setReturnSearchError(msg);
+        setReturnSaleDetails(null);
       }
     } catch (err) {
-      toast({ title: "Error", description: "Failed to fetch sale details", variant: "destructive" });
+      const msg = "Failed to fetch sale details. Please try again.";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+      setReturnSearchError(msg);
+      setReturnSaleDetails(null);
     }
     setIsFetchingSale(false);
   };
@@ -1269,12 +1463,12 @@ export default function POSComponent({ items, clients: initialClients, warehouse
   const handleProcessVoidReturn = async () => {
     const selectedItems = returnItemsState.filter(i => i.returnQty > 0).map(i => {
       const it = items.find(x => x.id === i.itemId);
-      const variant = i.variantId ? it?.variants?.find(v => v.id === i.variantId) : null;
+      const price = it ? getBasePrice({ ...it, variantId: i.variantId } as any, orderType) : 0;
       return { 
         itemId: i.itemId, 
         variantId: i.variantId || undefined, 
         quantity: i.returnQty, 
-        unitPrice: variant ? (variant.salesPrice || it?.unitPrice || 0) : (it?.unitPrice || 0) 
+        unitPrice: price 
       };
     });
     if(selectedItems.length === 0) return toast({ title: "Error", description: "Please select at least one item to return", variant: "destructive" });
@@ -1537,7 +1731,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
       });
       return;
     }
-    setCashAmount(grandTotal);
+    setCashAmount(grandTotal > 0 ? grandTotal : 0);
     setCardAmount(0);
     setMfsAmount(0);
     setIsDueSale(false);
@@ -1578,6 +1772,70 @@ export default function POSComponent({ items, clients: initialClients, warehouse
 
     setIsProcessing(true);
     try {
+      if (isExchangeMode) {
+        const returnItems = cart
+          .filter((i) => i.isReturnItem)
+          .map((i) => ({
+            itemId: i.id,
+            variantId: i.variantId || undefined,
+            quantity: i.cartQuantity,
+            unitPrice: i.unitPrice,
+            description: i.name,
+          }));
+
+        const newItems = cart
+          .filter((i) => !i.isReturnItem)
+          .map((i) => ({
+            itemId: i.id,
+            variantId: i.variantId || undefined,
+            quantity: i.cartQuantity,
+            unitPrice: i.unitPrice,
+            description: i.name,
+          }));
+
+        const res = await processSaleExchange({
+          clientId: selectedClientId,
+          warehouseId: selectedWarehouseId,
+          orderType: orderType as any,
+          returnItems,
+          newItems,
+          paymentDetails: {
+            cashAmount: cashAmount,
+            cashAccountId: cashAccountId || undefined,
+            cardAmount: cardAmount,
+            cardAccountId: cardAccountId || undefined,
+            mfsAmount: mfsAmount,
+            mfsAccountId: mfsAccountId || undefined,
+          },
+        });
+
+        if (res.success && res.sale) {
+          const saleNum = res.sale.saleNumber || "";
+          const saleId = res.sale.id || "";
+          setCompletedSaleNumber(saleNum);
+          setCompletedSaleId(saleId || "");
+          setCart([]);
+          setIsExchangeMode(false);
+          setIsConfirmModalOpen(false);
+          toast({
+            title: "Exchange Successful",
+            description: `Exchange Order ${saleNum} processed successfully!`,
+          });
+          if (saleId) {
+            printInvoiceDirect(saleId);
+          }
+          setIsChangeDialogOpen(true);
+        } else {
+          toast({
+            title: "Error processing exchange",
+            description: res.error || "Failed to process exchange.",
+            variant: "destructive",
+          });
+        }
+        setIsProcessing(false);
+        return;
+      }
+
       const saleItems = cart.map((item) => ({
         itemId: item.id,
         variantId: item.variantId || null,
@@ -1826,6 +2084,48 @@ export default function POSComponent({ items, clients: initialClients, warehouse
     return () => window.removeEventListener('keydown', handler);
   }, [isChangeDialogOpen]);
 
+  // Global Escape key shortcut to focus search input
+  useEffect(() => {
+    const handleEscapeFocus = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (
+          isReturnModalOpen ||
+          isConfirmModalOpen ||
+          isHeldCartsModalOpen ||
+          isVoidModalOpen ||
+          isAddCustomerOpen ||
+          isPayDueModalOpen ||
+          isPrintDialogOpen ||
+          isChangeDialogOpen ||
+          !!selectedItemForVariants
+        ) {
+          return;
+        }
+
+        if (searchInputRef.current) {
+          e.preventDefault();
+          searchInputRef.current.focus();
+          searchInputRef.current.select();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleEscapeFocus);
+    return () => {
+      window.removeEventListener("keydown", handleEscapeFocus);
+    };
+  }, [
+    isReturnModalOpen,
+    isConfirmModalOpen,
+    isHeldCartsModalOpen,
+    isVoidModalOpen,
+    isAddCustomerOpen,
+    isPayDueModalOpen,
+    isPrintDialogOpen,
+    isChangeDialogOpen,
+    selectedItemForVariants
+  ]);
+
   return (
     <div className="fixed inset-0 z-50 flex bg-background">
       <div className="flex-1 flex flex-col p-6 overflow-hidden bg-background relative">
@@ -1860,7 +2160,8 @@ export default function POSComponent({ items, clients: initialClients, warehouse
             <div className="relative w-80">
               <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
-                placeholder="Search products..." 
+                ref={searchInputRef}
+                placeholder="Search products... (Esc)" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-muted border-none text-foreground h-10"
@@ -1965,9 +2266,40 @@ export default function POSComponent({ items, clients: initialClients, warehouse
         <div className="absolute bottom-0 left-0 p-4 z-20 flex items-center gap-2 bg-transparent">
           <button 
             className="flex items-center justify-center gap-2 h-10 px-4 bg-[#e11d48] text-white hover:bg-[#e11d48]/90 transition-colors border border-[#e11d48]/20 rounded-lg text-xs font-bold shadow-lg"
-            onClick={() => { setActionSaleNumber(""); setIsReturnModalOpen(true); }}
+            onClick={() => { 
+              setActionSaleNumber(""); 
+              if (selectedClientId) setReturnCustomerId(selectedClientId);
+              setIsReturnModalOpen(true); 
+            }}
           >
             Return <FaUndoAlt className="w-3.5 h-3.5" />
+          </button>
+
+          <button 
+            className={`flex items-center justify-center gap-2 h-10 px-4 transition-all rounded-lg text-xs font-bold shadow-lg ${
+              isExchangeMode
+                ? "bg-[#d97706] text-white border-2 border-amber-400 ring-2 ring-amber-400/50 animate-pulse"
+                : "bg-[#d97706] text-white hover:bg-[#d97706]/90 border border-[#d97706]/20"
+            }`}
+            onClick={() => {
+              if (isExchangeMode) {
+                setIsExchangeMode(false);
+                setCart((prev) => prev.filter((i) => !i.isReturnItem));
+                sonnerToast.info("Exchange Mode Deactivated: Switched to standard POS sale.", {
+                  position: "bottom-right",
+                });
+              } else {
+                setIsExchangeMode(true);
+                setActionSaleNumber("");
+                if (selectedClientId) setReturnCustomerId(selectedClientId);
+                setIsReturnModalOpen(true);
+                sonnerToast.success("Exchange Mode Active: Select returned items from modal or barcode scanner.", {
+                  position: "bottom-right",
+                });
+              }
+            }}
+          >
+            {isExchangeMode ? "Exit Exchange Mode" : "Exchange"} <FaExchangeAlt className="w-3.5 h-3.5" />
           </button>
 
           <button 
@@ -2064,7 +2396,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                     <p>Your cart is empty</p>
                   </div>
                 ) : (
-                  cart.map((item) => (
+                  sortedCart.map((item) => (
                     <div key={item.cartKey} className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-muted rounded-md shrink-0 flex items-center justify-center relative overflow-hidden">
                          {item.imageUrl ? (
@@ -2074,14 +2406,23 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                          )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">{item.description}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.isReturnItem && (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-rose-500/10 text-rose-600 border border-rose-500/30 rounded uppercase tracking-wide">
+                              Return
+                            </span>
+                          )}
+                          <p className="text-sm font-semibold text-foreground truncate">{item.description}</p>
+                        </div>
                         {item.variantSku && (
                           <div className="flex gap-1 mt-0.5">
                             <span className="text-[9px] px-1.5 py-0.2 bg-muted border border-border text-foreground rounded font-medium">{item.color}</span>
                             <span className="text-[9px] px-1.5 py-0.2 bg-muted border border-border text-foreground rounded font-medium">{item.size}</span>
                           </div>
                         )}
-                        <p className="text-sm font-bold text-foreground">৳{item.unitPrice.toFixed(2)}</p>
+                        <p className={`text-sm font-bold ${item.isReturnItem ? "text-rose-600" : "text-foreground"}`}>
+                          {item.isReturnItem ? "-" : ""}৳{item.unitPrice.toFixed(2)}
+                        </p>
                       </div>
                       <div className="flex items-center justify-between gap-2 bg-muted rounded-full border border-border px-1 py-1 w-[124px] shrink-0">
                         <button 
@@ -2128,10 +2469,38 @@ export default function POSComponent({ items, clients: initialClients, warehouse
           <div className="pt-3">
             <h3 className="text-sm font-bold text-foreground mb-2">Order Summary</h3>
             <div className="bg-muted rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Item ({cart.length})</span>
-                <span className="font-medium text-foreground">৳{subTotal.toFixed(2)}</span>
-              </div>
+              {isExchangeMode ? (
+                (() => {
+                  const returnTotal = cart
+                    .filter((i) => i.isReturnItem)
+                    .reduce((sum, i) => sum + i.unitPrice * i.cartQuantity, 0);
+                  const newTotal = cart
+                    .filter((i) => !i.isReturnItem)
+                    .reduce((sum, i) => sum + i.unitPrice * i.cartQuantity, 0);
+                  const netEx = newTotal - returnTotal;
+                  return (
+                    <>
+                      <div className="flex justify-between text-xs text-rose-600 font-semibold">
+                        <span>Returned Items Total:</span>
+                        <span>-৳{returnTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-emerald-600 font-semibold">
+                        <span>New Items Total:</span>
+                        <span>৳{newTotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs font-semibold text-foreground pt-1 border-t border-dashed border-border/40">
+                        <span>Net Exchange Total:</span>
+                        <span>{netEx >= 0 ? "" : "-"}৳{Math.abs(netEx).toFixed(2)}</span>
+                      </div>
+                    </>
+                  );
+                })()
+              ) : (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Item ({cart.length})</span>
+                  <span className="font-medium text-foreground">৳{subTotal.toFixed(2)}</span>
+                </div>
+              )}
               <div className="border-t border-border border-dashed pt-2 flex justify-between items-center">
                 <span className="font-bold text-foreground">Total</span>
                 <span className="text-lg font-black text-foreground">৳{grandTotal.toFixed(2)}</span>
@@ -2170,7 +2539,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {cart.map((item) => (
+                    {sortedCart.map((item) => (
                       <tr key={item.cartKey} className="hover:bg-muted/10 transition-colors">
                         <td className="py-2 px-4">
                           <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
@@ -2182,7 +2551,18 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                           </div>
                         </td>
                         <td className="py-2 px-4">
-                          <span className="font-semibold text-foreground">{item.description}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {item.isReturnItem ? (
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 bg-rose-500/10 text-rose-600 border border-rose-500/30 rounded uppercase tracking-wide">
+                                Return
+                              </span>
+                            ) : isExchangeMode ? (
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 rounded uppercase tracking-wide">
+                                New Item
+                              </span>
+                            ) : null}
+                            <span className="font-semibold text-foreground">{item.description}</span>
+                          </div>
                           {item.variantSku && (
                             <div className="flex gap-1 mt-1">
                               <span className="text-[9px] px-1.5 py-0.5 bg-muted border border-border text-foreground rounded font-medium">{item.color}</span>
@@ -2190,9 +2570,17 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                             </div>
                           )}
                         </td>
-                        <td className="text-center py-3 px-4 text-muted-foreground font-medium">{item.cartQuantity}</td>
+                        <td className="text-center py-3 px-4 font-bold">
+                          <span className={item.isReturnItem ? "text-rose-600" : "text-foreground"}>
+                            {item.isReturnItem ? `-${item.cartQuantity}` : item.cartQuantity}
+                          </span>
+                        </td>
                         <td className="text-right py-3 px-4 text-muted-foreground">৳{item.unitPrice.toFixed(2)}</td>
-                        <td className="text-right py-3 px-4 font-bold text-foreground">৳{(item.cartQuantity * item.unitPrice).toFixed(2)}</td>
+                        <td className="text-right py-3 px-4 font-bold text-foreground">
+                          <span className={item.isReturnItem ? "text-rose-600" : "text-foreground"}>
+                            {item.isReturnItem ? `-৳${(item.cartQuantity * item.unitPrice).toFixed(2)}` : `৳${(item.cartQuantity * item.unitPrice).toFixed(2)}`}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2536,6 +2924,18 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                     <span>Grand Total:</span>
                     <span>৳{grandTotal.toFixed(2)}</span>
                   </div>
+                  {selectedClientId && previousCustomerDue > 0 && (
+                    <>
+                      <div className="flex justify-between text-xs font-semibold text-rose-600">
+                        <span>Previous Outstanding Due:</span>
+                        <span>৳{previousCustomerDue.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-extrabold text-rose-700 pt-1 border-t border-dashed border-rose-200">
+                        <span>Total Due Balance:</span>
+                        <span>৳{(grandTotal + previousCustomerDue).toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -2777,6 +3177,10 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                       <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <SearchableSelect 
                         options={items.flatMap(item => {
+                          const matchesOrderType = orderType === "RETAIL"
+                            ? item.itemType === "RETAIL"
+                            : item.itemType === "WHOLESALE";
+                          if (!matchesOrderType) return [];
                           if (item.variants && item.variants.length > 0) {
                             return item.variants.map(v => ({
                               value: `${item.id}:${v.id}`,
@@ -2837,7 +3241,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                           if(!item) return null;
                           const variant = state.variantId ? item.variants?.find(v => v.id === state.variantId) : null;
                           const label = item.name || item.description;
-                          const price = variant ? (variant.salesPrice || item.unitPrice) : item.unitPrice;
+                          const price = getBasePrice({ ...item, variantId: state.variantId } as any, orderType);
                           const total = price * state.returnQty;
                           return (
                             <tr key={`${state.itemId}-${state.variantId || 'none'}`} className="hover:bg-muted/5 transition-colors">
@@ -2893,6 +3297,9 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                 
                 <div className="flex justify-end gap-2 mt-2">
                   <Button variant="outline" onClick={() => { setIsReturnModalOpen(false); setReturnItemsState([]); setBarcodeInput(""); }}>Cancel</Button>
+                  <Button variant="outline" className="border-amber-500 text-amber-600 hover:bg-amber-500/10" onClick={() => handleAddReturnItemsToCart()} disabled={returnItemsState.length === 0}>
+                    Add to Exchange Cart
+                  </Button>
                   <Button variant="default" onClick={() => handleProcessVoidReturn()} disabled={isReturning || returnItemsState.length === 0}>{isReturning ? "Processing..." : "Process Void Return"}</Button>
                 </div>
               </div>
@@ -2904,6 +3311,13 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                 <Button variant={returnMode === "customer" ? "default" : "outline"} onClick={() => setReturnMode("customer")}>By Customer</Button>
               </div>
               
+              {returnSearchError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-600 rounded-lg text-xs flex items-center gap-2 mb-4">
+                  <FaExclamationTriangle className="shrink-0" />
+                  <span>{returnSearchError}</span>
+                </div>
+              )}
+
               {returnMode === "invoice" ? (
                 <div className="flex gap-2 items-end mb-4">
                   <div className="flex-1">
@@ -2914,9 +3328,9 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                       onChange={(e) => setActionSaleNumber(e.target.value)} 
                     />
                   </div>
-                  <Button onClick={handleFetchSaleForReturn} disabled={isFetchingSale}>{isFetchingSale ? "Searching..." : "Search"}</Button>
+                  <Button onClick={() => handleFetchSaleForReturn()} disabled={isFetchingSale}>{isFetchingSale ? "Searching..." : "Search"}</Button>
                 </div>
-              ) : (
+              ) : !returnSaleDetails ? (
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-2">Select Customer</label>
                   <SearchableSelect 
@@ -2944,6 +3358,14 @@ export default function POSComponent({ items, clients: initialClients, warehouse
                       ))}
                     </div>
                   )}
+                </div>
+              ) : null}
+
+              {returnSaleDetails && returnMode === "customer" && (
+                <div className="mb-3">
+                  <Button variant="outline" size="sm" onClick={() => { setReturnSaleDetails(null); setReturnItemsState([]); }}>
+                    <FaArrowLeft className="w-3 h-3 mr-1.5" /> Back to Invoices List
+                  </Button>
                 </div>
               )}
 
@@ -2987,6 +3409,9 @@ export default function POSComponent({ items, clients: initialClients, warehouse
               
               <div className="flex justify-end gap-2 mt-4">
                 <Button variant="outline" onClick={() => { setIsReturnModalOpen(false); setReturnSaleDetails(null); setReturnItemsState([]); setBarcodeInput(""); }}>Cancel</Button>
+                <Button variant="outline" className="border-amber-500 text-amber-600 hover:bg-amber-500/10" onClick={() => handleAddReturnItemsToCart()} disabled={!returnSaleDetails || returnItemsState.length === 0}>
+                  Add to Exchange Cart
+                </Button>
                 <Button variant="default" onClick={handleProcessReturn} disabled={isReturning || !returnSaleDetails}>{isReturning ? "Processing..." : "Process Invoice Return"}</Button>
               </div>
             </TabsContent>

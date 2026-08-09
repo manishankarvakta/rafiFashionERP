@@ -50,9 +50,48 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
       };
 
   const isReturn = sale.grandTotal.toNumber() < 0;
+  const isExchange = sale.orderType === "EXCHANGE" || sale.items.some(i => i.isReturnItem);
+
+  const newItems = sale.items.filter(item => !item.isReturnItem);
+  const returnedItems = sale.items.filter(item => item.isReturnItem);
 
   const totalItems = sale.items.length;
   const totalQty = sale.items.reduce((sum, item) => sum + Math.abs(item.quantity.toNumber()), 0);
+
+  let clientOutstandingDue = 0;
+  if (sale.clientId) {
+    const outstandingSales = await prisma.sale.findMany({
+      where: {
+        clientId: sale.clientId,
+        status: "COMPLETED",
+        id: { not: sale.id },
+      },
+      select: {
+        grandTotal: true,
+        paymentDetails: true,
+      }
+    });
+
+    outstandingSales.forEach(s => {
+      const details = s.paymentDetails as any;
+      const cash = details ? Number(details.cashAmount || 0) : s.grandTotal.toNumber();
+      const card = details ? Number(details.cardAmount || 0) : 0;
+      const mfs = details ? Number(details.mfsAmount || 0) : 0;
+      
+      let dueCollectionsPaid = 0;
+      if (details && Array.isArray(details.dueCollections)) {
+        for (const col of details.dueCollections) {
+          dueCollectionsPaid += Number(col.cashAmount || 0) + Number(col.cardAmount || 0) + Number(col.mfsAmount || 0);
+        }
+      }
+
+      const paid = cash + card + mfs + dueCollectionsPaid;
+      const remaining = Number((s.grandTotal.toNumber() - paid).toFixed(2));
+      if (remaining > 0) {
+        clientOutstandingDue += remaining;
+      }
+    });
+  }
 
   const paperSize = posSettings.paperSize || "80mm";
   const widthClass = 
@@ -101,7 +140,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <h1 className="text-lg font-bold uppercase">{posSettings.headerText || "Ferrari Fashion"}</h1>
         {posSettings.subHeaderText && <p className="text-[10px] text-gray-600">{posSettings.subHeaderText}</p>}
         <p className="font-bold mt-1 text-xs">
-          {isReturn ? "Return Invoice No:" : "Invoice No:"} {sale.saleNumber}
+          {isExchange ? "Exchange Invoice No:" : (isReturn ? "Return Invoice No:" : "Invoice No:")} {sale.saleNumber}
         </p>
       </div>
 
@@ -119,7 +158,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
       </div>
 
       <div className="text-center font-bold border-y border-dashed border-black py-1 mb-2">
-        {isReturn ? "RETURN DETAILS" : "ORDER DETAILS"}
+        {isExchange ? "EXCHANGE DETAILS" : (isReturn ? "RETURN DETAILS" : "ORDER DETAILS")}
       </div>
 
       <table className="w-full text-[10px] mb-4">
@@ -138,17 +177,58 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
               <td colSpan={5} className="py-2 text-center">No Product in Purchase cart</td>
             </tr>
           )}
-          {sale.items.map((item, index) => (
-            <tr key={item.id}>
-              <td className="py-1 align-top">{index + 1}</td>
-              <td className="align-top">
-                {item.description || item.item?.name}
-              </td>
-              <td className="text-center align-top">{Math.abs(item.quantity.toNumber())}</td>
-              <td className="text-right align-top">{item.unitPrice.toNumber().toFixed(2)}</td>
-              <td className="text-right align-top">{Math.abs(item.amount.toNumber()).toFixed(2)}</td>
-            </tr>
-          ))}
+          {isExchange ? (
+            <>
+              {newItems.length > 0 && (
+                <>
+                  <tr className="font-bold border-b border-dashed border-black">
+                    <td colSpan={5} className="py-1 uppercase text-[9px] tracking-wide text-gray-700">Purchased Items</td>
+                  </tr>
+                  {newItems.map((item, index) => (
+                    <tr key={item.id}>
+                      <td className="py-1 align-top">{index + 1}</td>
+                      <td className="align-top">
+                        {item.description || item.item?.name}
+                      </td>
+                      <td className="text-center align-top">{Math.abs(item.quantity.toNumber())}</td>
+                      <td className="text-right align-top">{item.unitPrice.toNumber().toFixed(2)}</td>
+                      <td className="text-right align-top">{Math.abs(item.amount.toNumber()).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </>
+              )}
+              {returnedItems.length > 0 && (
+                <>
+                  <tr className="font-bold border-b border-dashed border-black mt-2">
+                    <td colSpan={5} className="py-1 uppercase text-[9px] tracking-wide text-gray-700">Returned Items</td>
+                  </tr>
+                  {returnedItems.map((item, index) => (
+                    <tr key={item.id} className="text-gray-600">
+                      <td className="py-1 align-top">{index + 1}</td>
+                      <td className="align-top">
+                        {item.description || item.item?.name}
+                      </td>
+                      <td className="text-center align-top">-{Math.abs(item.quantity.toNumber())}</td>
+                      <td className="text-right align-top">{item.unitPrice.toNumber().toFixed(2)}</td>
+                      <td className="text-right align-top">-{Math.abs(item.amount.toNumber()).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </>
+              )}
+            </>
+          ) : (
+            sale.items.map((item, index) => (
+              <tr key={item.id}>
+                <td className="py-1 align-top">{index + 1}</td>
+                <td className="align-top">
+                  {item.description || item.item?.name}
+                </td>
+                <td className="text-center align-top">{Math.abs(item.quantity.toNumber())}</td>
+                <td className="text-right align-top">{item.unitPrice.toNumber().toFixed(2)}</td>
+                <td className="text-right align-top">{Math.abs(item.amount.toNumber()).toFixed(2)}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
 
@@ -224,6 +304,18 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                   <div className="flex justify-between font-semibold">
                     <span>Change Amount:</span>
                     <span>{change.toFixed(2)}</span>
+                  </div>
+                )}
+                {clientOutstandingDue > 0 && (
+                  <div className="border-t border-dashed border-black pt-1 mt-1 space-y-1">
+                    <div className="flex justify-between text-gray-700">
+                      <span>Prev Outstanding Due:</span>
+                      <span>{clientOutstandingDue.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t border-dashed border-black pt-0.5 mt-0.5">
+                      <span>Total Due Balance:</span>
+                      <span>{(due + clientOutstandingDue).toFixed(2)}</span>
+                    </div>
                   </div>
                 )}
               </div>

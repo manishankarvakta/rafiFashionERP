@@ -1,0 +1,1046 @@
+﻿diff --git a/startup-mvp/app/(dashboard)/dashboard/sales/pos/_components/POSComponent.tsx b/startup-mvp/app/(dashboard)/dashboard/sales/pos/_components/POSComponent.tsx
+index 461598e..e1b4ad0 100644
+--- a/startup-mvp/app/(dashboard)/dashboard/sales/pos/_components/POSComponent.tsx
++++ b/startup-mvp/app/(dashboard)/dashboard/sales/pos/_components/POSComponent.tsx
+@@ -1,15 +1,16 @@
+ "use client";
+ 
+-import React, { useState, useMemo, useEffect } from "react";
++import React, { useState, useMemo, useEffect, useRef } from "react";
+ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+ import { Input } from "@/components/ui/input";
+ import { Button } from "@/components/ui/button";
+ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+-import { FaSearch, FaHandPaper, FaSync, FaPrint, FaPlus, FaMinus, FaTrashAlt, FaShoppingCart, FaCheckCircle, FaTimes, FaUndoAlt, FaShoppingBag, FaIndustry, FaTicketAlt, FaCreditCard, FaMoneyBillWave, FaMobileAlt, FaUsers, FaGlassCheers } from "react-icons/fa";
+-import { createSale, getClientItemDiscounts, validateCoupon, voidSale, processSaleReturn, getLastSaleForUser, getSaleByNumber, getSalesByCustomer } from "../../_actions/sale.action";
++import { FaSearch, FaHandPaper, FaSync, FaPrint, FaPlus, FaMinus, FaTrashAlt, FaShoppingCart, FaCheckCircle, FaTimes, FaUndoAlt, FaShoppingBag, FaIndustry, FaTicketAlt, FaCreditCard, FaMoneyBillWave, FaMobileAlt, FaUsers, FaGlassCheers, FaExclamationTriangle, FaBoxOpen, FaExchangeAlt, FaArrowLeft } from "react-icons/fa";
++import { createSale, getClientItemDiscounts, validateCoupon, voidSale, processSaleReturn, processSaleExchange, getLastSaleForUser, getSaleByNumber, getSalesByCustomer } from "../../_actions/sale.action";
+ import { getOutstandingSales, collectCustomerDue } from "../../_actions/due-payment.action";
+ import { useRouter, useSearchParams } from "next/navigation";
+ import { useToastContext } from "@/components/ui/providers/toast-provider";
++import { toast as sonnerToast } from "sonner";
+ import { createClient } from "@/app/(dashboard)/dashboard/clients/_actions/client.action";
+ import { getMembershipSettingsAction } from "@/app/(dashboard)/dashboard/settings/_actions/membership-settings.action";
+ import { getMembershipTiers } from "@/app/(dashboard)/dashboard/settings/_actions/membership-tier.action";
+@@ -90,6 +91,8 @@ interface CartItem extends Item {
+   size?: string;
+   color?: string;
+   cartKey: string;
++  isReturnItem?: boolean;
++  originalSaleId?: string;
+ }
+ 
+ interface ActiveSalesman {
+@@ -131,6 +134,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+   const [clients, setClients] = useState<Client[]>(initialClients);
+ 
+   const [searchQuery, setSearchQuery] = useState("");
++  const searchInputRef = useRef<HTMLInputElement>(null);
+   const [filterType, setFilterType] = useState<string>("ALL");
+   
+   // URL mode sync
+@@ -217,6 +221,8 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+   const [lumpSumAmount, setLumpSumAmount] = useState<number>(0);
+   const [invoiceAllocations, setInvoiceAllocations] = useState<Record<string, number>>({});
+   const [isSubmittingDuePayment, setIsSubmittingDuePayment] = useState(false);
++  const [previousCustomerDue, setPreviousCustomerDue] = useState<number>(0);
++  const [isExchangeMode, setIsExchangeMode] = useState(false);
+ 
+   // Filter payment methods based on selected warehouse
+   const filteredPaymentAccounts = useMemo(() => {
+@@ -297,6 +303,21 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+     setPaidAmount(cashAmount + cardAmount + mfsAmount);
+   }, [cashAmount, cardAmount, mfsAmount]);
+ 
++  useEffect(() => {
++    if (selectedClientId) {
++      getOutstandingSales(selectedClientId).then(res => {
++        if (res.success && res.sales) {
++          const totalPrev = res.sales.reduce((sum, s) => sum + Number(s.remainingDue || 0), 0);
++          setPreviousCustomerDue(totalPrev);
++        } else {
++          setPreviousCustomerDue(0);
++        }
++      }).catch(() => setPreviousCustomerDue(0));
++    } else {
++      setPreviousCustomerDue(0);
++    }
++  }, [selectedClientId, isConfirmModalOpen]);
++
+   useEffect(() => {
+     if (payDueClientId) {
+       getOutstandingSales(payDueClientId).then(res => {
+@@ -350,18 +371,29 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+   useEffect(() => {
+     if (returnMode === "customer" && returnCustomerId) {
+       setIsFetchingCustomerSales(true);
+-      getSalesByCustomer(returnCustomerId).then(res => {
+-        if(res.success) setCustomerSales(res.sales || []);
+-        else toast({ title: "Error", description: "Could not fetch sales", variant: "destructive" });
++      setReturnSearchError(null);
++      setReturnSaleDetails(null);
++      getSalesByCustomer(returnCustomerId, orderType).then(res => {
++        if(res.success) {
++          const sales = res.sales || [];
++          setCustomerSales(sales);
++          if (sales.length === 0) {
++            setReturnSearchError(`No completed invoices found for this customer in ${orderType} mode.`);
++          }
++        } else {
++          toast({ title: "Error", description: "Could not fetch sales", variant: "destructive" });
++          setReturnSearchError(res.error || "Failed to fetch customer sales");
++        }
+         setIsFetchingCustomerSales(false);
+       });
+     } else {
+       setCustomerSales([]);
+     }
+-  }, [returnMode, returnCustomerId]);
++  }, [returnMode, returnCustomerId, orderType]);
+ 
+   const [actionSaleNumber, setActionSaleNumber] = useState('');
+   const [returnSaleDetails, setReturnSaleDetails] = useState<any>(null);
++  const [returnSearchError, setReturnSearchError] = useState<string | null>(null);
+   const [returnItemsState, setReturnItemsState] = useState<{itemId: string, variantId?: string, maxQty: number, returnQty: number}[]>([]);
+   const [barcodeInput, setBarcodeInput] = useState('');
+   const [isFetchingSale, setIsFetchingSale] = useState(false);
+@@ -696,13 +728,30 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+     }
+   }, [searchQuery, filteredItems.length, itemsHiddenDueToStock, selectedWarehouseId]);
+ 
+-  const subTotal = cart.reduce((sum, item) => sum + item.unitPrice * item.cartQuantity, 0);
+-  const itemVatTotal = cart.reduce((sum, item) => {
+-    if (item.isVatEnabled && item.vatPercentage) {
+-      return sum + (item.unitPrice * item.cartQuantity) * (item.vatPercentage / 100);
+-    }
+-    return sum;
+-  }, 0);
++  const sortedCart = useMemo(() => {
++    return [...cart].sort((a, b) => {
++      if (a.isReturnItem && !b.isReturnItem) return -1;
++      if (!a.isReturnItem && b.isReturnItem) return 1;
++      return 0;
++    });
++  }, [cart]);
++
++  const subTotal = useMemo(() => {
++    return cart.reduce((sum, item) => {
++      const lineVal = item.unitPrice * item.cartQuantity;
++      return sum + (item.isReturnItem ? -lineVal : lineVal);
++    }, 0);
++  }, [cart]);
++
++  const itemVatTotal = useMemo(() => {
++    return cart.reduce((sum, item) => {
++      if (item.isVatEnabled && item.vatPercentage) {
++        const lineVal = (item.unitPrice * item.cartQuantity) * (item.vatPercentage / 100);
++        return sum + (item.isReturnItem ? -lineVal : lineVal);
++      }
++      return sum;
++    }, 0);
++  }, [cart]);
+   const manualDiscountAmount = discountType === "PERCENTAGE"
+     ? Number((subTotal * (discountValue / 100)).toFixed(2))
+     : discountValue;
+@@ -796,6 +845,11 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+       }
+       return [...prev, itemToAdd];
+     });
++
++    if (searchInputRef.current) {
++      searchInputRef.current.focus();
++      searchInputRef.current.select();
++    }
+   };
+ 
+   const handleVariantAddToCart = (item: Item, variant: ItemVariant, quantity: number = 1) => {
+@@ -871,6 +925,11 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+       }
+       return [...prev, itemToAdd];
+     });
++
++    if (searchInputRef.current) {
++      searchInputRef.current.focus();
++      searchInputRef.current.select();
++    }
+   };
+ 
+   const handleUpdateQuantity = (cartKey: string, delta: number) => {
+@@ -1238,20 +1297,154 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+     }
+   };
+ 
++  const handleAddReturnItemsToCart = () => {
++    const validReturnItems = returnItemsState.filter((r) => r.returnQty > 0);
++    if (validReturnItems.length === 0) {
++      toast({ title: "Warning", description: "No items selected for return.", variant: "destructive" });
++      return;
++    }
++
++    const newCartEntries: CartItem[] = [];
++
++    for (const rState of validReturnItems) {
++      const item = items.find((i) => i.id === rState.itemId);
++      if (item) {
++        let variant: ItemVariant | undefined;
++        if (rState.variantId && item.variants) {
++          variant = item.variants.find((v) => v.id === rState.variantId);
++        }
++
++        const displayPrice = variant ? Number(variant.price) : Number(item.salesPrice);
++        const cartKey = `${item.id}-${rState.variantId || "base"}-return`;
++
++        newCartEntries.push({
++          ...item,
++          cartQuantity: rState.returnQty,
++          variantId: rState.variantId,
++          variantSku: variant?.sku,
++          size: variant?.size,
++          color: variant?.color,
++          salesPrice: displayPrice as any,
++          cartKey,
++          isReturnItem: true,
++          originalSaleId: returnSaleDetails?.id,
++        });
++      } else if (returnSaleDetails && returnSaleDetails.items) {
++        const detailItem = returnSaleDetails.items.find(
++          (i: any) => i.itemId === rState.itemId && (rState.variantId ? i.variantId === rState.variantId : !i.variantId)
++        );
++        if (detailItem) {
++          const cartKey = `${detailItem.itemId}-${detailItem.variantId || "base"}-return`;
++          newCartEntries.push({
++            id: detailItem.itemId,
++            code: detailItem.code || "RET",
++            name: detailItem.description,
++            description: detailItem.description,
++            salesPrice: detailItem.unitPrice as any,
++            itemType: "RETAIL",
++            trackInventory: true,
++            unitId: detailItem.unitId || "",
++            cartQuantity: rState.returnQty,
++            variantId: detailItem.variantId || undefined,
++            variantSku: detailItem.variantSku || undefined,
++            size: detailItem.size || undefined,
++            color: detailItem.color || undefined,
++            unitPrice: Number(detailItem.unitPrice),
++            cartKey,
++            isReturnItem: true,
++            originalSaleId: returnSaleDetails.id,
++          } as any);
++        }
++      }
++    }
++
++    if (newCartEntries.length === 0) {
++      toast({ title: "Warning", description: "No valid return items found to add.", variant: "destructive" });
++      return;
++    }
++
++    setCart((prev) => {
++      const nonReturn = prev.filter((i) => !i.isReturnItem);
++      return [...nonReturn, ...newCartEntries];
++    });
++
++    if (returnSaleDetails?.clientId) {
++      setSelectedClientId(returnSaleDetails.clientId);
++    } else if (returnCustomerId) {
++      setSelectedClientId(returnCustomerId);
++    }
++
++    setIsExchangeMode(true);
++    setIsReturnModalOpen(false);
++    setReturnItemsState([]);
++    setReturnSaleDetails(null);
++    sonnerToast.success(`Exchange Items Added: ${newCartEntries.length} returned item(s) added to cart. Select new items from catalog.`, {
++      position: "bottom-right",
++    });
++  };
++
+   const handleFetchSaleForReturn = async (saleNum?: any) => {
+     const saleNumberToFetch = (typeof saleNum === "string" && saleNum) ? saleNum : actionSaleNumber;
+     if(!saleNumberToFetch) return toast({ title: "Error", description: "Sale Number is required", variant: "destructive" });
+     setIsFetchingSale(true);
++    setReturnSearchError(null);
+     try {
+       const res = await getSaleByNumber(saleNumberToFetch);
+       if (res.success && res.sale) {
++        const isClientWholesale = !!(
++          res.sale.client?.clientType === "wholesale" ||
++          res.sale.client?.company?.toLowerCase().includes("wholesale") ||
++          res.sale.client?.name?.toLowerCase().includes("wholesale") ||
++          res.sale.client?.email?.toLowerCase().includes("wholesale") ||
++          res.sale.client?.clientCode?.toLowerCase().includes("wholesale")
++        );
++        const hasWholesaleItems = res.sale.items?.some((i: any) => i.item?.itemType === "WHOLESALE");
++        const isSaleWholesale = res.sale.orderType === "WHOLESALE" || isClientWholesale || hasWholesaleItems;
++        const isCurrentWholesale = orderType === "WHOLESALE";
++
++        if (isCurrentWholesale && !isSaleWholesale) {
++          const msg = `Mode Mismatch: Invoice ${saleNumberToFetch} is a Retail invoice. Please switch POS mode to Retail to return this invoice.`;
++          toast({
++            title: "Mode Mismatch",
++            description: msg,
++            variant: "destructive"
++          });
++          setReturnSearchError(msg);
++          setReturnSaleDetails(null);
++          setReturnItemsState([]);
++          setIsFetchingSale(false);
++          return;
++        } else if (!isCurrentWholesale && isSaleWholesale) {
++          const msg = `Mode Mismatch: Invoice ${saleNumberToFetch} is a Wholesale invoice. Please switch POS mode to Wholesale to return this invoice.`;
++          toast({
++            title: "Mode Mismatch",
++            description: msg,
++            variant: "destructive"
++          });
++          setReturnSearchError(msg);
++          setReturnSaleDetails(null);
++          setReturnItemsState([]);
++          setIsFetchingSale(false);
++          return;
++        }
++        setReturnSearchError(null);
+         setReturnSaleDetails(res.sale);
+         setReturnItemsState(res.sale.items.map((i: any) => ({ itemId: i.itemId, variantId: i.variantId || undefined, maxQty: Number(i.quantity), returnQty: 0 })));
++        if (res.sale.clientId) {
++          setSelectedClientId(res.sale.clientId);
++          setReturnCustomerId(res.sale.clientId);
++        }
+       } else {
+-        toast({ title: "Not Found", description: res.error || "Sale not found", variant: "destructive" });
++        const msg = res.error || `Invoice "${saleNumberToFetch}" not found.`;
++        toast({ title: "Not Found", description: msg, variant: "destructive" });
++        setReturnSearchError(msg);
++        setReturnSaleDetails(null);
+       }
+     } catch (err) {
+-      toast({ title: "Error", description: "Failed to fetch sale details", variant: "destructive" });
++      const msg = "Failed to fetch sale details. Please try again.";
++      toast({ title: "Error", description: msg, variant: "destructive" });
++      setReturnSearchError(msg);
++      setReturnSaleDetails(null);
+     }
+     setIsFetchingSale(false);
+   };
+@@ -1269,12 +1462,12 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+   const handleProcessVoidReturn = async () => {
+     const selectedItems = returnItemsState.filter(i => i.returnQty > 0).map(i => {
+       const it = items.find(x => x.id === i.itemId);
+-      const variant = i.variantId ? it?.variants?.find(v => v.id === i.variantId) : null;
++      const price = it ? getBasePrice({ ...it, variantId: i.variantId } as any, orderType) : 0;
+       return { 
+         itemId: i.itemId, 
+         variantId: i.variantId || undefined, 
+         quantity: i.returnQty, 
+-        unitPrice: variant ? (variant.salesPrice || it?.unitPrice || 0) : (it?.unitPrice || 0) 
++        unitPrice: price 
+       };
+     });
+     if(selectedItems.length === 0) return toast({ title: "Error", description: "Please select at least one item to return", variant: "destructive" });
+@@ -1537,7 +1730,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+       });
+       return;
+     }
+-    setCashAmount(grandTotal);
++    setCashAmount(grandTotal > 0 ? grandTotal : 0);
+     setCardAmount(0);
+     setMfsAmount(0);
+     setIsDueSale(false);
+@@ -1589,6 +1782,70 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+ 
+       const primaryPaymentMethod = cashAmount > 0 ? cashAccountId : (cardAmount > 0 ? cardAccountId : (mfsAmount > 0 ? mfsAccountId : "SPLIT"));
+ 
++      if (isExchangeMode) {
++        const returnItems = cart
++          .filter((i) => i.isReturnItem)
++          .map((i) => ({
++            itemId: i.id,
++            variantId: i.variantId || undefined,
++            quantity: i.cartQuantity,
++            unitPrice: i.unitPrice,
++            description: i.name,
++          }));
++
++        const newItems = cart
++          .filter((i) => !i.isReturnItem)
++          .map((i) => ({
++            itemId: i.id,
++            variantId: i.variantId || undefined,
++            quantity: i.cartQuantity,
++            unitPrice: i.unitPrice,
++            description: i.name,
++          }));
++
++        const res = await processSaleExchange({
++          clientId: selectedClientId,
++          warehouseId: selectedWarehouseId,
++          orderType: orderType as any,
++          returnItems,
++          newItems,
++          paymentDetails: {
++            cashAmount: cashAmount,
++            cashAccountId: cashAccountId || null,
++            cardAmount: cardAmount,
++            cardAccountId: cardAccountId || null,
++            mfsAmount: mfsAmount,
++            mfsAccountId: mfsAccountId || null,
++          },
++        });
++
++        if (res.success && res.sale) {
++          const saleNum = res.sale.saleNumber || "";
++          const saleId = res.sale.id || "";
++          setCompletedSaleNumber(saleNum);
++          setCompletedSaleId(saleId);
++          setCart([]);
++          setIsExchangeMode(false);
++          setIsConfirmModalOpen(false);
++          toast({
++            title: "Exchange Successful",
++            description: `Exchange Order ${saleNum} processed successfully!`,
++          });
++          if (saleId) {
++            printInvoiceDirect(saleId);
++          }
++          setIsChangeDialogOpen(true);
++        } else {
++          toast({
++            title: "Error processing exchange",
++            description: res.error || "Failed to process exchange.",
++            variant: "destructive",
++          });
++        }
++        setIsProcessing(false);
++        return;
++      }
++
+       const res = await createSale({
+         clientId: selectedClientId,
+         warehouseId: selectedWarehouseId,
+@@ -1826,6 +2083,48 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+     return () => window.removeEventListener('keydown', handler);
+   }, [isChangeDialogOpen]);
+ 
++  // Global Escape key shortcut to focus search input
++  useEffect(() => {
++    const handleEscapeFocus = (e: KeyboardEvent) => {
++      if (e.key === "Escape") {
++        if (
++          isReturnModalOpen ||
++          isConfirmModalOpen ||
++          isHeldCartsModalOpen ||
++          isVoidModalOpen ||
++          isAddCustomerOpen ||
++          isPayDueModalOpen ||
++          isPrintDialogOpen ||
++          isChangeDialogOpen ||
++          !!selectedItemForVariants
++        ) {
++          return;
++        }
++
++        if (searchInputRef.current) {
++          e.preventDefault();
++          searchInputRef.current.focus();
++          searchInputRef.current.select();
++        }
++      }
++    };
++
++    window.addEventListener("keydown", handleEscapeFocus);
++    return () => {
++      window.removeEventListener("keydown", handleEscapeFocus);
++    };
++  }, [
++    isReturnModalOpen,
++    isConfirmModalOpen,
++    isHeldCartsModalOpen,
++    isVoidModalOpen,
++    isAddCustomerOpen,
++    isPayDueModalOpen,
++    isPrintDialogOpen,
++    isChangeDialogOpen,
++    selectedItemForVariants
++  ]);
++
+   return (
+     <div className="fixed inset-0 z-50 flex bg-background">
+       <div className="flex-1 flex flex-col p-6 overflow-hidden bg-background relative">
+@@ -1860,7 +2159,8 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+             <div className="relative w-80">
+               <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+               <Input 
+-                placeholder="Search products..." 
++                ref={searchInputRef}
++                placeholder="Search products... (Esc)" 
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 className="pl-10 bg-muted border-none text-foreground h-10"
+@@ -1965,11 +2265,42 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+         <div className="absolute bottom-0 left-0 p-4 z-20 flex items-center gap-2 bg-transparent">
+           <button 
+             className="flex items-center justify-center gap-2 h-10 px-4 bg-[#e11d48] text-white hover:bg-[#e11d48]/90 transition-colors border border-[#e11d48]/20 rounded-lg text-xs font-bold shadow-lg"
+-            onClick={() => { setActionSaleNumber(""); setIsReturnModalOpen(true); }}
++            onClick={() => { 
++              setActionSaleNumber(""); 
++              if (selectedClientId) setReturnCustomerId(selectedClientId);
++              setIsReturnModalOpen(true); 
++            }}
+           >
+             Return <FaUndoAlt className="w-3.5 h-3.5" />
+           </button>
+ 
++          <button 
++            className={`flex items-center justify-center gap-2 h-10 px-4 transition-all rounded-lg text-xs font-bold shadow-lg ${
++              isExchangeMode
++                ? "bg-[#d97706] text-white border-2 border-amber-400 ring-2 ring-amber-400/50 animate-pulse"
++                : "bg-[#d97706] text-white hover:bg-[#d97706]/90 border border-[#d97706]/20"
++            }`}
++            onClick={() => {
++              if (isExchangeMode) {
++                setIsExchangeMode(false);
++                setCart((prev) => prev.filter((i) => !i.isReturnItem));
++                sonnerToast.info("Exchange Mode Deactivated: Switched to standard POS sale.", {
++                  position: "bottom-right",
++                });
++              } else {
++                setIsExchangeMode(true);
++                setActionSaleNumber("");
++                if (selectedClientId) setReturnCustomerId(selectedClientId);
++                setIsReturnModalOpen(true);
++                sonnerToast.success("Exchange Mode Active: Select returned items from modal or barcode scanner.", {
++                  position: "bottom-right",
++                });
++              }
++            }}
++          >
++            {isExchangeMode ? "Exit Exchange Mode" : "Exchange"} <FaExchangeAlt className="w-3.5 h-3.5" />
++          </button>
++
+           <button 
+             className="flex items-center justify-center gap-2 h-10 px-4 bg-[#6366f1] text-white hover:bg-[#6366f1]/90 transition-colors border border-[#6366f1]/20 rounded-lg text-xs font-bold shadow-lg"
+             onClick={() => { setPayDueClientId(""); setOutstandingSales([]); setIsPayDueModalOpen(true); }}
+@@ -2064,7 +2395,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                     <p>Your cart is empty</p>
+                   </div>
+                 ) : (
+-                  cart.map((item) => (
++                  sortedCart.map((item) => (
+                     <div key={item.cartKey} className="flex items-center gap-3">
+                       <div className="w-12 h-12 bg-muted rounded-md shrink-0 flex items-center justify-center relative overflow-hidden">
+                          {item.imageUrl ? (
+@@ -2074,14 +2405,23 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                          )}
+                       </div>
+                       <div className="flex-1 min-w-0">
+-                        <p className="text-sm font-semibold text-foreground truncate">{item.description}</p>
++                        <div className="flex items-center gap-1">
++                          {item.isReturnItem && (
++                            <span className="text-[9px] font-bold px-1.5 py-0.2 bg-rose-500/10 text-rose-600 border border-rose-500/30 rounded uppercase shrink-0">
++                              Return
++                            </span>
++                          )}
++                          <p className="text-sm font-semibold text-foreground truncate">{item.description}</p>
++                        </div>
+                         {item.variantSku && (
+                           <div className="flex gap-1 mt-0.5">
+                             <span className="text-[9px] px-1.5 py-0.2 bg-muted border border-border text-foreground rounded font-medium">{item.color}</span>
+                             <span className="text-[9px] px-1.5 py-0.2 bg-muted border border-border text-foreground rounded font-medium">{item.size}</span>
+                           </div>
+                         )}
+-                        <p className="text-sm font-bold text-foreground">αº│{item.unitPrice.toFixed(2)}</p>
++                        <p className={`text-sm font-bold ${item.isReturnItem ? "text-rose-600" : "text-foreground"}`}>
++                          {item.isReturnItem ? "-" : ""}αº│{item.unitPrice.toFixed(2)}
++                        </p>
+                       </div>
+                       <div className="flex items-center justify-between gap-2 bg-muted rounded-full border border-border px-1 py-1 w-[124px] shrink-0">
+                         <button 
+@@ -2127,24 +2467,56 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+ 
+           <div className="pt-3">
+             <h3 className="text-sm font-bold text-foreground mb-2">Order Summary</h3>
+-            <div className="bg-muted rounded-xl p-4 space-y-2">
+-              <div className="flex justify-between text-sm">
+-                <span className="text-muted-foreground">Item ({cart.length})</span>
+-                <span className="font-medium text-foreground">αº│{subTotal.toFixed(2)}</span>
+-              </div>
+-              <div className="border-t border-border border-dashed pt-2 flex justify-between items-center">
+-                <span className="font-bold text-foreground">Total</span>
+-                <span className="text-lg font-black text-foreground">αº│{grandTotal.toFixed(2)}</span>
++            {isExchangeMode ? (
++              (() => {
++                const retSub = cart.filter((i) => i.isReturnItem).reduce((acc, item) => acc + item.unitPrice * item.cartQuantity, 0);
++                const newSub = cart.filter((i) => !i.isReturnItem).reduce((acc, item) => acc + item.unitPrice * item.cartQuantity, 0);
++                const netBal = newSub - retSub;
++                return (
++                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-2">
++                    <div className="flex justify-between text-xs font-semibold text-rose-600">
++                      <span>Returned Subtotal:</span>
++                      <span>-αº│{retSub.toFixed(2)}</span>
++                    </div>
++                    <div className="flex justify-between text-xs font-semibold text-emerald-600">
++                      <span>New Purchase Subtotal:</span>
++                      <span>+αº│{newSub.toFixed(2)}</span>
++                    </div>
++                    <div className="border-t border-dashed border-amber-500/40 pt-2 flex justify-between items-center">
++                      <span className="font-bold text-xs text-amber-700 uppercase">
++                        {netBal > 0 ? "Net Payable:" : netBal < 0 ? "Net Refund:" : "Even Exchange:"}
++                      </span>
++                      <span className="text-base font-black text-amber-700">
++                        αº│{Math.abs(netBal).toFixed(2)}
++                      </span>
++                    </div>
++                  </div>
++                );
++              })()
++            ) : (
++              <div className="bg-muted rounded-xl p-4 space-y-2">
++                <div className="flex justify-between text-sm">
++                  <span className="text-muted-foreground">Item ({cart.length})</span>
++                  <span className="font-medium text-foreground">αº│{subTotal.toFixed(2)}</span>
++                </div>
++                <div className="border-t border-border border-dashed pt-2 flex justify-between items-center">
++                  <span className="font-bold text-foreground">Total</span>
++                  <span className="text-lg font-black text-foreground">αº│{grandTotal.toFixed(2)}</span>
++                </div>
+               </div>
+-            </div>
++            )}
+ 
+             <Button 
+-              className="w-full mt-3 h-12 text-base font-bold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
++              className={`w-full mt-3 h-12 text-base font-bold rounded-xl text-primary-foreground ${
++                isExchangeMode
++                  ? "bg-amber-600 hover:bg-amber-700"
++                  : "bg-primary hover:bg-primary/90"
++              }`}
+               size="lg"
+               onClick={handleProcessTransaction}
+               disabled={cart.length === 0}
+             >
+-              Process Transaction
++              {isExchangeMode ? "Process Exchange" : "Process Transaction"}
+             </Button>
+           </div>
+         </div>
+@@ -2170,7 +2542,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-border">
+-                    {cart.map((item) => (
++                    {sortedCart.map((item) => (
+                       <tr key={item.cartKey} className="hover:bg-muted/10 transition-colors">
+                         <td className="py-2 px-4">
+                           <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
+@@ -2182,7 +2554,18 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                           </div>
+                         </td>
+                         <td className="py-2 px-4">
+-                          <span className="font-semibold text-foreground">{item.description}</span>
++                          <div className="flex items-center gap-2 flex-wrap">
++                            {item.isReturnItem ? (
++                              <span className="text-[10px] font-extrabold px-2 py-0.5 bg-rose-500/10 text-rose-600 border border-rose-500/30 rounded uppercase tracking-wide">
++                                ≡ƒö┤ Return
++                              </span>
++                            ) : isExchangeMode ? (
++                              <span className="text-[10px] font-extrabold px-2 py-0.5 bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 rounded uppercase tracking-wide">
++                                ≡ƒƒó New Item
++                              </span>
++                            ) : null}
++                            <span className="font-semibold text-foreground">{item.description}</span>
++                          </div>
+                           {item.variantSku && (
+                             <div className="flex gap-1 mt-1">
+                               <span className="text-[9px] px-1.5 py-0.5 bg-muted border border-border text-foreground rounded font-medium">{item.color}</span>
+@@ -2190,9 +2573,17 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                             </div>
+                           )}
+                         </td>
+-                        <td className="text-center py-3 px-4 text-muted-foreground font-medium">{item.cartQuantity}</td>
++                        <td className="text-center py-3 px-4 font-bold">
++                          <span className={item.isReturnItem ? "text-rose-600" : "text-foreground"}>
++                            {item.isReturnItem ? `-${item.cartQuantity}` : item.cartQuantity}
++                          </span>
++                        </td>
+                         <td className="text-right py-3 px-4 text-muted-foreground">αº│{item.unitPrice.toFixed(2)}</td>
+-                        <td className="text-right py-3 px-4 font-bold text-foreground">αº│{(item.cartQuantity * item.unitPrice).toFixed(2)}</td>
++                        <td className="text-right py-3 px-4 font-bold">
++                          <span className={item.isReturnItem ? "text-rose-600" : "text-foreground"}>
++                            {item.isReturnItem ? `-αº│${(item.cartQuantity * item.unitPrice).toFixed(2)}` : `αº│${(item.cartQuantity * item.unitPrice).toFixed(2)}`}
++                          </span>
++                        </td>
+                       </tr>
+                     ))}
+                   </tbody>
+@@ -2504,8 +2895,20 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+ 
+                 {/* Price Summary Breakdown */}
+                 <div className="pt-3 border-t border-border space-y-1.5">
++                  {isExchangeMode && (
++                    <>
++                      <div className="flex justify-between text-xs font-semibold text-rose-600">
++                        <span>Returned Subtotal:</span>
++                        <span>-αº│{cart.filter((i) => i.isReturnItem).reduce((acc, i) => acc + i.unitPrice * i.cartQuantity, 0).toFixed(2)}</span>
++                      </div>
++                      <div className="flex justify-between text-xs font-semibold text-emerald-600">
++                        <span>New Items Subtotal:</span>
++                        <span>+αº│{cart.filter((i) => !i.isReturnItem).reduce((acc, i) => acc + i.unitPrice * i.cartQuantity, 0).toFixed(2)}</span>
++                      </div>
++                    </>
++                  )}
+                   <div className="flex justify-between text-xs font-semibold text-muted-foreground">
+-                    <span>Subtotal:</span>
++                    <span>{isExchangeMode ? "Net Subtotal:" : "Subtotal:"}</span>
+                     <span>αº│{subTotal.toFixed(2)}</span>
+                   </div>
+                   {appliedPromo || manualDiscountAmount > 0 ? (
+@@ -2536,6 +2939,14 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                     <span>Grand Total:</span>
+                     <span>αº│{grandTotal.toFixed(2)}</span>
+                   </div>
++                  <div className="flex justify-between text-xs font-semibold text-amber-600 pt-1.5 border-t border-dashed border-border">
++                    <span>Previous Due:</span>
++                    <span>αº│{previousCustomerDue.toFixed(2)}</span>
++                  </div>
++                  <div className="flex justify-between text-sm font-bold text-destructive">
++                    <span>Total Due:</span>
++                    <span>αº│{(previousCustomerDue + (isReturnMode ? 0 : Math.max(0, grandTotal - paidAmount))).toFixed(2)}</span>
++                  </div>
+                 </div>
+               </div>
+ 
+@@ -2757,8 +3168,19 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+ 
+       
+       {/* Unified Return Modal */}
+-      <Dialog open={isReturnModalOpen} onOpenChange={(open) => { setIsReturnModalOpen(open); if(!open) { setReturnSaleDetails(null); setReturnItemsState([]); setBarcodeInput(""); } }}>
+-        <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
++      <Dialog open={isReturnModalOpen} onOpenChange={(open) => { 
++        setIsReturnModalOpen(open); 
++        if(!open) { 
++          setReturnSaleDetails(null); 
++          setReturnItemsState([]); 
++          setBarcodeInput(""); 
++          if (isExchangeMode && cart.filter(i => i.isReturnItem).length === 0) {
++            setIsExchangeMode(false);
++            sonnerToast.info("Exchange Mode Exited", { position: "bottom-right" });
++          }
++        } 
++      }}>
++        <DialogContent className="sm:max-w-6xl h-[85vh] max-h-[85vh] overflow-y-auto">
+           <Tabs defaultValue="void-return" className="w-full">
+             <DialogHeader className="flex flex-row items-center justify-between border-b pb-4 mb-4">
+               <DialogTitle className="text-xl font-bold tracking-tight">Process Return</DialogTitle>
+@@ -2776,19 +3198,31 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                     <div className="relative">
+                       <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                       <SearchableSelect 
+-                        options={items.flatMap(item => {
+-                          if (item.variants && item.variants.length > 0) {
+-                            return item.variants.map(v => ({
+-                              value: `${item.id}:${v.id}`,
+-                              label: `${item.name || item.description} - ${v.color} / ${v.size} (${v.sku})`
+-                            }));
+-                          } else {
+-                            return [{
+-                              value: item.id,
+-                              label: item.name || item.description
+-                            }];
+-                          }
+-                        })}
++                        options={items
++                          .filter(item => {
++                            const isWholesale = orderType === "WHOLESALE";
++                            return isWholesale
++                              ? item.itemType === "WHOLESALE"
++                              : (item.itemType === "READY_PRODUCT" || item.itemType === "RETAIL");
++                          })
++                          .flatMap(item => {
++                            const codeStr = item.code ? ` [Code: ${item.code}]` : "";
++                            if (item.variants && item.variants.length > 0) {
++                              return item.variants.map(v => {
++                                const stockQty = v.stocks?.find(s => s.warehouseId === selectedWarehouseId)?.quantity || 0;
++                                return {
++                                  value: `${item.id}:${v.id}`,
++                                  label: `${item.name || item.description}${codeStr} - ${v.color} / ${v.size} (${v.sku}) | Stock: ${stockQty}`
++                                };
++                              });
++                            } else {
++                              const stockQty = item.stocks?.find(s => s.warehouseId === selectedWarehouseId)?.quantity || 0;
++                              return [{
++                                value: item.id,
++                                label: `${item.name || item.description}${codeStr} | Stock: ${stockQty}`
++                              }];
++                            }
++                          })}
+                         value=""
+                         onValueChange={(val) => {
+                           if(val) {
+@@ -2837,7 +3271,7 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                           if(!item) return null;
+                           const variant = state.variantId ? item.variants?.find(v => v.id === state.variantId) : null;
+                           const label = item.name || item.description;
+-                          const price = variant ? (variant.salesPrice || item.unitPrice) : item.unitPrice;
++                          const price = getBasePrice({ ...item, variantId: state.variantId } as any, orderType);
+                           const total = price * state.returnQty;
+                           return (
+                             <tr key={`${state.itemId}-${state.variantId || 'none'}`} className="hover:bg-muted/5 transition-colors">
+@@ -2892,7 +3326,18 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+                 </div>
+                 
+                 <div className="flex justify-end gap-2 mt-2">
+-                  <Button variant="outline" onClick={() => { setIsReturnModalOpen(false); setReturnItemsState([]); setBarcodeInput(""); }}>Cancel</Button>
++                  <Button variant="outline" onClick={() => { 
++                    setIsReturnModalOpen(false); 
++                    setReturnItemsState([]); 
++                    setBarcodeInput(""); 
++                    if (isExchangeMode && cart.filter(i => i.isReturnItem).length === 0) {
++                      setIsExchangeMode(false);
++                      sonnerToast.info("Exchange Mode Exited", { position: "bottom-right" });
++                    }
++                  }}>Cancel</Button>
++                  <Button className="bg-[#d97706] text-white hover:bg-[#d97706]/90 border border-[#d97706]/20 font-bold shadow-sm" onClick={handleAddReturnItemsToCart} disabled={returnItemsState.length === 0}>
++                    <FaExchangeAlt className="w-3.5 h-3.5 mr-1.5" /> Add to Exchange Cart
++                  </Button>
+                   <Button variant="default" onClick={() => handleProcessVoidReturn()} disabled={isReturning || returnItemsState.length === 0}>{isReturning ? "Processing..." : "Process Void Return"}</Button>
+                 </div>
+               </div>
+@@ -2900,93 +3345,164 @@ export default function POSComponent({ items, clients: initialClients, warehouse
+             
+             <TabsContent value="invoice-return" className="py-4">
+               <div className="flex gap-4 mb-4 border-b pb-2">
+-                <Button variant={returnMode === "invoice" ? "default" : "outline"} onClick={() => setReturnMode("invoice")}>By Invoice</Button>
+-                <Button variant={returnMode === "customer" ? "default" : "outline"} onClick={() => setReturnMode("customer")}>By Customer</Button>
++                <Button 
++                  variant={returnMode === "invoice" ? "default" : "outline"} 
++                  onClick={() => {
++                    setReturnMode("invoice");
++                    setReturnSaleDetails(null);
++                    setReturnItemsState([]);
++                  }}
++                >
++                  By Invoice
++                </Button>
++                <Button 
++                  variant={returnMode === "customer" ? "default" : "outline"} 
++                  onClick={() => {
++                    setReturnMode("customer");
++                    setReturnSaleDetails(null);
++                    setReturnItemsState([]);
++                  }}
++                >
++                  By Customer
++                </Button>
+               </div>
+               
+-              {returnMode === "invoice" ? (
+-                <div className="flex gap-2 items-end mb-4">
+-                  <div className="flex-1">
+-                    <label className="block text-sm font-medium mb-2">Sale Number</label>
+-                    <Input 
+-                      placeholder="e.g. SL-12345" 
+-                      value={actionSaleNumber} 
+-                      onChange={(e) => setActionSaleNumber(e.target.value)} 
++              {!returnSaleDetails ? (
++                returnMode === "invoice" ? (
++                  <div className="flex gap-2 items-end mb-4">
++                    <div className="flex-1">
++                      <label className="block text-sm font-medium mb-2">Sale Number</label>
++                      <Input 
++                        placeholder="e.g. SL-12345" 
++                        value={actionSaleNumber} 
++                        onChange={(e) => setActionSaleNumber(e.target.value)} 
++                      />
++                    </div>
++                    <Button onClick={handleFetchSaleForReturn} disabled={isFetchingSale}>{isFetchingSale ? "Searching..." : "Search"}</Button>
++                  </div>
++                ) : (
++                  <div className="mb-4">
++                    <label className="block text-sm font-medium mb-2">Select Customer</label>
++                    <SearchableSelect 
++                      options={clientOptions}
++                      value={returnCustomerId || null}
++                      onValueChange={(val) => {
++                        const newCustId = val || "";
++                        setReturnCustomerId(newCustId);
++                        if (newCustId) {
++                          setSelectedClientId(newCustId);
++                        }
++                      }}
++                      placeholder="Search Customer..."
+                     />
++                    {isFetchingCustomerSales && <p className="text-xs text-muted-foreground mt-1">Loading sales...</p>}
++                    {!isFetchingCustomerSales && customerSales.length > 0 && (
++                      <div className="mt-4 border rounded-lg p-2 max-h-[35vh] overflow-y-auto flex flex-col gap-2 bg-muted/5">
++                        <p className="font-semibold text-sm px-1 py-1">Select an Invoice to Return From:</p>
++                        {customerSales.map(sale => (
++                          <div key={sale.id} className="flex justify-between items-center p-2.5 bg-background border rounded-lg cursor-pointer hover:bg-muted/30 hover:border-primary/20 transition-all" onClick={() => {
++                            setActionSaleNumber(sale.saleNumber);
++                            handleFetchSaleForReturn(sale.saleNumber);
++                          }}>
++                            <div>
++                              <p className="text-sm font-bold">{sale.saleNumber}</p>
++                              <p className="text-xs text-muted-foreground">{new Date(sale.createdAt).toLocaleDateString()}</p>
++                            </div>
++                            <p className="text-sm font-semibold">αº│{sale.grandTotal}</p>
++                            <Button size="sm" variant="secondary">Select</Button>
++                          </div>
++                        ))}
++                      </div>
++                    )}
+                   </div>
+-                  <Button onClick={handleFetchSaleForReturn} disabled={isFetchingSale}>{isFetchingSale ? "Searching..." : "Search"}</Button>
+-                </div>
++                )
+               ) : (
+-                <div className="mb-4">
+-                  <label className="block text-sm font-medium mb-2">Select Customer</label>
+-                  <SearchableSelect 
+-                    options={clientOptions}
+-                    value={returnCustomerId || null}
+-                    onValueChange={(val) => setReturnCustomerId(val || "")}
+-                    placeholder="Search Customer..."
+-                  />
+-                  {isFetchingCustomerSales && <p className="text-xs text-muted-foreground mt-1">Loading sales...</p>}
+-                  {!isFetchingCustomerSales && customerSales.length > 0 && (
+-                    <div className="mt-4 border rounded-lg p-2 max-h-[30vh] overflow-y-auto flex flex-col gap-2 bg-muted/5">
+-                      <p className="font-semibold text-sm px-1 py-1">Select an Invoice to Return From:</p>
+-                      {customerSales.map(sale => (
+-                        <div key={sale.id} className="flex justify-between items-center p-2.5 bg-background border rounded-lg cursor-pointer hover:bg-muted/30 hover:border-primary/20 transition-all" onClick={() => {
+-                          setActionSaleNumber(sale.saleNumber);
+-                          handleFetchSaleForReturn(sale.saleNumber);
+-                        }}>
+-                          <div>
+-                            <p className="text-sm font-bold">{sale.saleNumber}</p>
+-                            <p className="text-xs text-muted-foreground">{new Date(sale.createdAt).toLocaleDateString()}</p>
+-                          </div>
+-                          <p className="text-sm font-semibold">αº│{sale.grandTotal}</p>
+-                          <Button size="sm" variant="secondary">Select</Button>
++                <div className="space-y-4 mb-4">
++                  {/* Selected Sale Header Summary Card with Back Button */}
++                  <div className="flex items-center justify-between p-3.5 bg-muted/30 border border-border rounded-xl shadow-sm">
++                    <div className="flex items-center gap-3">
++                      <Button
++                        variant="outline"
++                        size="sm"
++                        className="flex items-center gap-1.5 text-xs font-bold shrink-0"
++                        onClick={() => {
++                          setReturnSaleDetails(null);
++                          setReturnItemsState([]);
++                        }}
++                      >
++                        <FaArrowLeft className="w-3.5 h-3.5" /> Back to Invoices
++                      </Button>
++                      <div>
++                        <div className="flex items-center gap-2">
++                          <span className="font-extrabold text-base text-foreground">{returnSaleDetails.saleNumber}</span>
++                          <span className="text-xs font-bold px-2 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded">
++                            αº│{Number(returnSaleDetails.grandTotal).toFixed(2)}
++                          </span>
+                         </div>
+-                      ))}
++                        <p className="text-xs text-muted-foreground mt-0.5">
++                          Customer: <span className="font-semibold text-foreground">{returnSaleDetails.client?.name || "Walk-in Customer"}</span> ΓÇó Date: {new Date(returnSaleDetails.createdAt).toLocaleDateString()}
++                        </p>
++                      </div>
+                     </div>
+-                  )}
+-                </div>
+-              )}
++                  </div>
+ 
+-              {returnSaleDetails && (
+-                <div className="mt-4 border rounded-lg p-4 bg-muted/10">
+-                  <p className="font-bold text-sm mb-3">Sale Items (Select Quantities to Return)</p>
+-                  <div className="max-h-[30vh] overflow-y-auto flex flex-col gap-2">
+-                    {returnSaleDetails.items.map((item: any) => {
+-                      const state = returnItemsState.find(i => i.itemId === item.itemId && (item.variantId ? i.variantId === item.variantId : !i.variantId));
+-                      return (
+-                        <div key={item.id} className="flex items-center justify-between bg-background border rounded-lg p-3 shadow-sm hover:border-primary/20 transition-all">
+-                          <div className="flex-1 min-w-0 pr-4">
+-                            <p className="text-sm font-semibold text-foreground">{item.description}</p>
+-                            <p className="text-xs text-muted-foreground mt-1">
+-                              Purchased: {item.originalQuantity ?? item.quantity}
+-                              {Number(item.returnedQuantity || 0) > 0 && ` (Returned: ${item.returnedQuantity})`}
+-                              {` | αº│${item.unitPrice}`}
+-                            </p>
+-                          </div>
+-                          <div className="flex items-center gap-3 w-[128px] shrink-0 justify-end">
+-                            <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => handleUpdateReturnQty(item.itemId, (state?.returnQty || 0) - 1, item.variantId)}>-</Button>
+-                            <input
+-                              type="number"
+-                              min="0"
+-                              max={state?.maxQty || 9999}
+-                              value={state?.returnQty === 0 ? "" : (state?.returnQty || 0)}
+-                              onChange={(e) => {
+-                                const val = parseInt(e.target.value, 10);
+-                                handleUpdateReturnQty(item.itemId, isNaN(val) ? 0 : val, item.variantId);
+-                              }}
+-                              className="text-sm font-semibold w-14 text-center text-foreground bg-background border border-border/80 rounded-md outline-none focus:border-primary/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-0.5 px-0.5 m-0"
+-                            />
+-                            <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => handleUpdateReturnQty(item.itemId, (state?.returnQty || 0) + 1, item.variantId)}>+</Button>
++                  {/* SS2: Sale Items */}
++                  <div className="border rounded-xl p-4 bg-muted/10">
++                    <p className="font-bold text-sm mb-3">Sale Items (Select Quantities to Return)</p>
++                    <div className="max-h-[30vh] overflow-y-auto flex flex-col gap-2">
++                      {returnSaleDetails.items.map((item: any) => {
++                        const state = returnItemsState.find(i => i.itemId === item.itemId && (item.variantId ? i.variantId === item.variantId : !i.variantId));
++                        return (
++                          <div key={item.id} className="flex items-center justify-between bg-background border rounded-lg p-3 shadow-sm hover:border-primary/20 transition-all">
++                            <div className="flex-1 min-w-0 pr-4">
++                              <p className="text-sm font-semibold text-foreground">{item.description}</p>
++                              <p className="text-xs text-muted-foreground mt-1">
++                                Purchased: {item.originalQuantity ?? item.quantity}
++                                {Number(item.returnedQuantity || 0) > 0 && ` (Returned: ${item.returnedQuantity})`}
++                                {` | αº│${item.unitPrice}`}
++                              </p>
++                            </div>
++                            <div className="flex items-center gap-3 w-[128px] shrink-0 justify-end">
++                              <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => handleUpdateReturnQty(item.itemId, (state?.returnQty || 0) - 1, item.variantId)}>-</Button>
++                              <input
++                                type="number"
++                                min="0"
++                                max={state?.maxQty || 9999}
++                                value={state?.returnQty ?? 0}
++                                onChange={(e) => {
++                                  const val = parseInt(e.target.value, 10);
++                                  handleUpdateReturnQty(item.itemId, isNaN(val) ? 0 : val, item.variantId);
++                                }}
++                                className="text-sm font-semibold w-14 text-center text-foreground bg-background border border-border/80 rounded-md outline-none focus:border-primary/50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none py-0.5 px-0.5 m-0"
++                              />
++                              <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => handleUpdateReturnQty(item.itemId, (state?.returnQty || 0) + 1, item.variantId)}>+</Button>
++                            </div>
+                           </div>
+-                        </div>
+-                      );
+-                    })}
++                        );
++                      })}
++                    </div>
+                   </div>
+                 </div>
+               )}
+               
+               <div className="flex justify-end gap-2 mt-4">
+-                <Button variant="outline" onClick={() => { setIsReturnModalOpen(false); setReturnSaleDetails(null); setReturnItemsState([]); setBarcodeInput(""); }}>Cancel</Button>
++                <Button variant="outline" onClick={() => { 
++                  setIsReturnModalOpen(false); 
++                  setReturnSaleDetails(null); 
++                  setReturnItemsState([]); 
++                  setBarcodeInput(""); 
++                  if (isExchangeMode && cart.filter(i => i.isReturnItem).length === 0) {
++                    setIsExchangeMode(false);
++                    sonnerToast.info("Exchange Mode Exited", { position: "bottom-right" });
++                  }
++                }}>Cancel</Button>
++                <Button 
++                  className="bg-[#d97706] text-white hover:bg-[#d97706]/90 border border-[#d97706]/20 font-bold shadow-sm" 
++                  onClick={handleAddReturnItemsToCart} 
++                  disabled={!returnSaleDetails || returnItemsState.filter(i => i.returnQty > 0).length === 0}
++                >
++                  <FaExchangeAlt className="w-3.5 h-3.5 mr-1.5" /> Add to Exchange Cart
++                </Button>
+                 <Button variant="default" onClick={handleProcessReturn} disabled={isReturning || !returnSaleDetails}>{isReturning ? "Processing..." : "Process Invoice Return"}</Button>
+               </div>
+             </TabsContent>
