@@ -77,7 +77,7 @@ Configure specific extra allowances paid directly for daily working conditions:
 
 ## 3. Database Relations Reference
 
-The relations are defined in [prisma/schema.prisma](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/prisma/schema.prisma) as follows:
+The relations are defined in [prisma/schema.prisma](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/prisma/schema.prisma) as follows:
 
 ```prisma
 model EmployeeType {
@@ -122,7 +122,7 @@ model EmployeeType {
 
 ## 4. Server Actions API
 
-We list and join policy mappings using the following Next.js Server Actions defined in [payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts):
+We list and join policy mappings using the following Next.js Server Actions defined in [payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts):
 
 *   `listSalaryStructurePolicies()`: Fetches all active salary structures.
 *   `listAttendancePolicies()`: Fetches active attendance rules.

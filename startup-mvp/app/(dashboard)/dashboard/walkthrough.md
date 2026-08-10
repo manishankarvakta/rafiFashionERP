@@ -6,7 +6,7 @@ This walkthrough documents the completions made to implement Phase 2: Payroll Po
 
 ## Changes Completed
 
-### 1. Server CRUD Actions Layer ([payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts))
+### 1. Server CRUD Actions Layer ([payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts))
 - Developed full backend database CRUD endpoints supporting writes, updates, and soft deletions for:
   - `SalaryStructurePolicy` (validates basic + housing + medical + food + transport sum equals exactly 100% and single default constraints).
   - `AttendancePolicy` (validates bonus formats and positive boundary amounts).
@@ -18,7 +18,7 @@ This walkthrough documents the completions made to implement Phase 2: Payroll Po
   - `PayrollSetting` (updates defaults).
   - `EmployeeType` (dynamically maps policies per category).
 
-### 2. Client-Side tabbed Dashboard ([PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx))
+### 2. Client-Side tabbed Dashboard ([PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx))
 - Implemented a 10-tab Radix UI layout.
 - Added dialog modals containing custom forms to create/modify templates.
 - Added a percentage sum calculator with real-time gross salary split preview.

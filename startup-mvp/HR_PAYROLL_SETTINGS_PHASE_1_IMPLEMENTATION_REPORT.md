@@ -11,31 +11,31 @@ Phase 1 implements a backward-compatible, flexible database schema and data-fetc
 
 ## 2. Files Changed
 ### Existing Files Modified:
-1. **[prisma/schema.prisma](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/prisma/schema.prisma)**:
+1. **[prisma/schema.prisma](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/prisma/schema.prisma)**:
    - Added 8 new models (`SalaryStructurePolicy`, `AttendancePolicy`, `LatePolicy`, `OvertimePolicy`, `TiffinBillPolicy`, `NightBillPolicy`, `HolidayBillPolicy`, and `PayrollSetting`).
    - Extended `EmployeeType` to hold relations to all 7 policy models.
    - Extended `Attendance` with placeholder fields for calculated allowances and deductions.
    - Extended `PayrollItem` with placeholder allowance/deduction columns.
    - Extended `User` with back-relations for policy audit tracking.
-2. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
+2. **[app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_components/PayrollSettings.tsx)**:
    - Added a client-side layout separating global configurations and HR/Payroll policies.
    - Integrated tab structure using Radix UI `<Tabs>`.
    - Wired up server actions to display all active policy templates and dynamic `EmployeeType` mappings.
-3. **[app/(dashboard)/dashboard/employees/_actions/employee.action.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/_actions/employee.action.tsx)**:
+3. **[app/(dashboard)/dashboard/employees/_actions/employee.action.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/_actions/employee.action.tsx)**:
    - Updated employee creation and update actions to link with custom `EmployeeType` relations.
-4. **[app/(dashboard)/dashboard/employees/_components/employeeForm.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/_components/employeeForm.tsx)**:
+4. **[app/(dashboard)/dashboard/employees/_components/employeeForm.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/_components/employeeForm.tsx)**:
    - Enabled dynamic loading of employee types in the employee setup form.
-5. **[app/(dashboard)/dashboard/employees/page.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/page.tsx)**:
+5. **[app/(dashboard)/dashboard/employees/page.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/page.tsx)**:
    - Added an entry button in the header directing admins to the custom Employee Types setup page.
-6. **[docs/DOCUMENTATION_INDEX.md](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/docs/DOCUMENTATION_INDEX.md)**:
+6. **[docs/DOCUMENTATION_INDEX.md](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/docs/DOCUMENTATION_INDEX.md)**:
    - Updated standard indices to register the new payroll policy architecture document.
 
 ### New Files Added:
-1. **[prisma/seed-payroll-defaults.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/prisma/seed-payroll-defaults.ts)**:
+1. **[prisma/seed-payroll-defaults.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/prisma/seed-payroll-defaults.ts)**:
    - Idempotent script seeding all default payroll settings and default policies.
-2. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
+2. **[app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/settings/_actions/payroll-policies.action.ts)**:
    - Server actions defining policy template data fetchers (`listSalaryStructurePolicies`, `listAttendancePolicies`, etc.).
-3. **[docs/EMPLOYEE_TYPES_POLICIES_AND_CALCULATIONS.md](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/docs/EMPLOYEE_TYPES_POLICIES_AND_CALCULATIONS.md)**:
+3. **[docs/EMPLOYEE_TYPES_POLICIES_AND_CALCULATIONS.md](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/docs/EMPLOYEE_TYPES_POLICIES_AND_CALCULATIONS.md)**:
    - Architected payroll settings, policy guidelines, and mapping schemas for developers.
 
 ---

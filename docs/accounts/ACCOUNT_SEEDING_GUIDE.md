@@ -8,7 +8,7 @@ This guide explains how to seed the Chart of Accounts (COA) / Accounts Head into
 
 To prevent data mismatch and ensure a clean environment, we extracted the static Chart of Accounts hierarchy directly from the database, filtered out dynamically generated user-specific/transactional heads, and generated a standalone, production-safe seed script.
 
-- **Seed File Location**: [seed-chart-of-accounts-live.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/prisma/seed-chart-of-accounts-live.ts)
+- **Seed File Location**: [seed-chart-of-accounts-live.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/prisma/seed-chart-of-accounts-live.ts)
 - **Scope**: Creates the base 66 static ledger groups and control accounts.
 
 ---

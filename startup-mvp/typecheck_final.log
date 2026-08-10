@@ -149,8 +149,8 @@ app/(dashboard)/dashboard/employees/details/page.tsx(237,72): error TS2339: Prop
   Property 'relation' does not exist on type 'string'.
 app/(dashboard)/dashboard/employees/details/page.tsx(241,72): error TS2339: Property 'phone' does not exist on type 'string | number | boolean | JsonObject | JsonArray'.
   Property 'phone' does not exist on type 'string'.
-app/(dashboard)/dashboard/files/page.tsx(923,16): error TS2322: Type 'import("/Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/hooks/use-toast").Toast[]' is not assignable to type 'import("/Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/components/ui/toast").Toast[]'.
-  Type 'import("/Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/hooks/use-toast").Toast' is not assignable to type 'import("/Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/components/ui/toast").Toast'.
+app/(dashboard)/dashboard/files/page.tsx(923,16): error TS2322: Type 'import("/Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/hooks/use-toast").Toast[]' is not assignable to type 'import("/Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/components/ui/toast").Toast[]'.
+  Type 'import("/Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/hooks/use-toast").Toast' is not assignable to type 'import("/Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/components/ui/toast").Toast'.
     Types of property 'duration' are incompatible.
       Type 'number | null | undefined' is not assignable to type 'number | undefined'.
         Type 'null' is not assignable to type 'number | undefined'.

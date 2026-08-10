@@ -1,6 +1,6 @@
 # HRM Regression Testing
 
-This document details the automated regression testing pipeline for the ffERP HRM & Payroll modules. 
+This document details the automated regression testing pipeline for the rafierp HRM & Payroll modules. 
 To ensure zero-regression deployments, the CI/CD pipeline runs these tests automatically against an isolated database.
 
 ## Running Tests Locally
