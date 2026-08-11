@@ -104,6 +104,7 @@ model User {
   createdBonuses                   EmployeeBonus[]         @relation("BonusCreator")
   approvedBonuses                  EmployeeBonus[]         @relation("BonusApprover")
   createdStockOuts                 StockOut[]              @relation("StockOutCreatedBy")
+  createdDailyOutputs              EmployeeDailyOutput[]
 
   @@index([status])
   @@index([designationTemplateId])
@@ -167,6 +168,7 @@ model Employee {
   assistedSales          Sale[]              @relation("SaleSalesAssistant")
   fines                  EmployeeFine[]
   bonuses                EmployeeBonus[]
+  dailyOutputs           EmployeeDailyOutput[]
 
   @@index([userId])
   @@index([status])
@@ -2753,4 +2755,30 @@ model StockOutItem {
   @@index([stockOutId])
   @@index([itemId])
   @@index([variantId])
+}
+
+// ============================================
+// EMPLOYEE DAILY PRODUCTION OUTPUT EXTENSION
+// ============================================
+
+model EmployeeDailyOutput {
+  id               String           @id @default(cuid())
+  employeeId       String           @map("employee_id")
+  date             DateTime         @db.Date @map("date")
+  targetProduction Int              @default(0) @map("target_production")
+  piecesProduced   Int              @map("pieces_produced")
+  notes            String?          @db.Text
+  createdBy        String           @map("created_by")
+  isTrash          Boolean          @default(false) @map("is_trash")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  
+  // Relations
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  creator          User             @relation(fields: [createdBy], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@map("employee_daily_outputs")
 }

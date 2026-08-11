@@ -134,6 +134,7 @@ export const MENU_TEMPLATE: MenuItemData[] = [
       { href: "/dashboard/hr/loans", label: "Loans", icon: "FiCreditCard", module: "hr" },
       { href: "/dashboard/hr/fines", label: "Fines & Penalties", icon: "FiAlertTriangle", module: "hr" },
       { href: "/dashboard/hr/bonuses", label: "Bonuses & Rewards", icon: "FiAward", module: "hr" },
+      { href: "/dashboard/hr/production-output", label: "Production Output", icon: "FiAward", module: "hr" },
       { href: "/dashboard/hr/biometric/devices", label: "Biometric Devices", icon: "FiCpu", module: "hr" },
       // The following routes are preserved for backward compatibility and admin direct access, 
       // but hidden from the normal HR user's sidebar to simplify the UI experience.

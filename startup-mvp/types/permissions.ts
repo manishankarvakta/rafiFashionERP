@@ -224,6 +224,7 @@ export const MODULES: Record<Module, ModuleMetadata> = {
       { id: "loans", label: "Loans", path: "/dashboard/hr/loans", module: "hr", permissionKey: "hr.loans" },
       { id: "fines", label: "Fines & Penalties", path: "/dashboard/hr/fines", module: "hr", permissionKey: "hr.fines" },
       { id: "bonuses", label: "Bonuses & Rewards", path: "/dashboard/hr/bonuses", module: "hr", permissionKey: "hr.bonuses" },
+      { id: "production-output", label: "Production Output", path: "/dashboard/hr/production-output", module: "hr", permissionKey: "hr.production-output" },
     ],
   },
   notifications: {
@@ -783,6 +784,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
         permissionKey: "hr.bonuses",
         path: "/dashboard/hr/bonuses",
         label: "Bonuses & Rewards",
+        operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
+      },
+      {
+        permissionKey: "hr.production-output",
+        path: "/dashboard/hr/production-output",
+        label: "Production Output",
         operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
       },
       {

@@ -42,7 +42,8 @@ async function seedPermissions() {
     "hr.payroll.view",
     "hr.payroll.manage",
     "hr.fines",
-    "hr.bonuses"
+    "hr.bonuses",
+    "hr.production-output"
   ];
 
   // Manager Template - Full access to all pages
