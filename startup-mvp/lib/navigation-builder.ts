@@ -179,6 +179,12 @@ export const MENU_TEMPLATE: MenuItemData[] = [
         module: "inventory" 
       },
       { 
+        href: "/dashboard/inventory/stock-out", 
+        label: "Stock Out", 
+        icon: "FiLogOut", 
+        module: "inventory" 
+      },
+      { 
         href: "/dashboard/inventory/count", 
         label: "Inventory Count", 
         icon: "FiCheckSquare", 

@@ -103,6 +103,7 @@ model User {
   approvedFines                    EmployeeFine[]          @relation("FineApprover")
   createdBonuses                   EmployeeBonus[]         @relation("BonusCreator")
   approvedBonuses                  EmployeeBonus[]         @relation("BonusApprover")
+  createdStockOuts                 StockOut[]              @relation("StockOutCreatedBy")
 
   @@index([status])
   @@index([designationTemplateId])
@@ -419,6 +420,7 @@ model Item {
   tpnItems                       TransferPurchaseNoteItem[]
   grnItems                       GRNItem[]
   inventoryDamageItems           InventoryDamageItem[]
+  stockOutItems                  StockOutItem[]
   inventoryCountEntries          InventoryCountEntry[]
 
   @@index([code])
@@ -470,6 +472,7 @@ model Warehouse {
   clients             Client[]
   suppliers           Supplier[]
   posClosingSessions  POSClosingSession[]
+  stockOuts            StockOut[]
 
   @@index([code])
   @@index([name])
@@ -1050,6 +1053,7 @@ model Voucher {
   employeeLoans                 EmployeeLoan[]
   inventoryAdjustment           InventoryAdjustment?
   inventoryDamage               InventoryDamage?
+  stockOut                      StockOut?
   JournalEntry                  JournalEntry[]
   payrollPayment                Payroll?             @relation("PayrollPaymentVoucher")
   payrollAccrual                Payroll?             @relation("PayrollVoucher")
@@ -1763,6 +1767,7 @@ enum VoucherType {
   PURCHASE
   RETURN
   DAMAGE
+  STOCK_OUT
 }
 
 enum CashBankAccountType {
@@ -1961,6 +1966,7 @@ model ProductVariant {
   grnItems                 GRNItem[]
   inventoryAdjustmentItems InventoryAdjustmentItem[]
   inventoryCountEntries    InventoryCountEntry[]
+  stockOutItems            StockOutItem[]
 
   @@index([itemId])
   @@index([sku])
@@ -2697,4 +2703,54 @@ enum POSClosingStatus {
   DRAFT
   CLOSED
   VERIFIED
+}
+
+enum StockOutStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+}
+
+model StockOut {
+  id          String         @id @default(cuid())
+  stockOutNo  String         @unique
+  warehouseId String
+  date        DateTime       @default(now())
+  status      StockOutStatus @default(DRAFT)
+  notes       String?        @db.Text
+  voucherId   String?        @unique
+  isTrash     Boolean        @default(false)
+  createdById String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id])
+  createdByUser User           @relation("StockOutCreatedBy", fields: [createdById], references: [id])
+  voucher       Voucher?       @relation(fields: [voucherId], references: [id])
+  items         StockOutItem[]
+
+  @@index([warehouseId])
+  @@index([createdById])
+  @@index([voucherId])
+  @@index([isTrash])
+}
+
+model StockOutItem {
+  id         String          @id @default(cuid())
+  stockOutId String
+  itemId     String
+  variantId  String?
+  quantity   Decimal         @db.Decimal(12, 2)
+  unitRate   Decimal         @db.Decimal(12, 2)
+  amount     Decimal         @db.Decimal(12, 2)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  stockOut   StockOut        @relation(fields: [stockOutId], references: [id], onDelete: Cascade)
+  item       Item            @relation(fields: [itemId], references: [id])
+  variant    ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([stockOutId])
+  @@index([itemId])
+  @@index([variantId])
 }

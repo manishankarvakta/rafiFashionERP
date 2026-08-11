@@ -49,6 +49,7 @@ async function seedPermissions() {
   const managerPermissions: Partial<EnhancedPermissions> = {
     ...createPermissionsForPages(allPageKeys, allStandardOps),
     ...createPermissionsForPages(hrExtraKeys, allStandardOps),
+    ...createPermissionsForPages(["inventory.stock-out"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
     "sales.daybook": {
       navigationVisible: true,
       pageAccess: true,
@@ -168,6 +169,7 @@ async function seedPermissions() {
   const superAdminPermissions: Partial<EnhancedPermissions> = {
     ...createPermissionsForPages(allPageKeys, ["create", "view", "edit", "move-to-trash", "delete-permanently", "export", "import"]),
     ...createPermissionsForPages(hrExtraKeys, ["create", "view", "edit", "move-to-trash", "delete-permanently", "export", "import"]),
+    ...createPermissionsForPages(["inventory.stock-out"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently", "export", "import"]),
     "sales.daybook": {
       navigationVisible: true,
       pageAccess: true,
@@ -210,6 +212,8 @@ async function seedPermissions() {
     ...createPermissionsForPages(["purchases.purchases"], allStandardOps),
     // Sales - full access
     ...createPermissionsForPages(["sales.sales"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
+    // Inventory - full access
+    ...createPermissionsForPages(["inventory.stock-out"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
     // Inventory - full access
     ...createPermissionsForPages(["inventory.stock"], ["view", "adjust"]),
     // Production - full access

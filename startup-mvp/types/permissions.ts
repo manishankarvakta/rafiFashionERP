@@ -262,6 +262,7 @@ export const MODULES: Record<Module, ModuleMetadata> = {
       { id: "stock", label: "Stock", path: "/dashboard/inventory/stock", module: "inventory", permissionKey: "inventory.stock" },
       { id: "adjustments", label: "Adjustments", path: "/dashboard/inventory/adjustments", module: "inventory", permissionKey: "inventory.adjustments" },
       { id: "damage", label: "Damage", path: "/dashboard/inventory/damage", module: "inventory", permissionKey: "inventory.damage" },
+      { id: "stock-out", label: "Stock Out", path: "/dashboard/inventory/stock-out", module: "inventory", permissionKey: "inventory.stock-out" },
       { id: "count-scanner", label: "Count Scanner", path: "/dashboard/inventory/count", module: "inventory", permissionKey: "inventory.count.scanner" },
       { id: "count-entries", label: "All Count Entries", path: "/dashboard/inventory/count/entries", module: "inventory", permissionKey: "inventory.count.entries" },
       { id: "count-adjustment", label: "Auto Adjustment", path: "/dashboard/inventory/count/adjustment", module: "inventory", permissionKey: "inventory.count.adjustment" },
@@ -926,6 +927,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
         permissionKey: "inventory.damage",
         path: "/dashboard/inventory/damage",
         label: "Damage",
+        operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
+      },
+      {
+        permissionKey: "inventory.stock-out",
+        path: "/dashboard/inventory/stock-out",
+        label: "Stock Out",
         operations: ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"],
       },
       {
