@@ -24,6 +24,7 @@ import {
   FiTrendingDown,
 } from "react-icons/fi";
 import { format } from "date-fns";
+import PrintHeader, { PrintStyle } from "@/app/(dashboard)/dashboard/procurements/_components/print-header";
 
 interface LedgerItem {
   id: string;
@@ -77,6 +78,12 @@ interface ClientLedgerProps {
   summary: LedgerSummary;
   initialStartDate?: string;
   initialEndDate?: string;
+  organization?: {
+    name?: string | null;
+    address?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
 }
 
 export default function ClientLedger({
@@ -85,6 +92,7 @@ export default function ClientLedger({
   summary,
   initialStartDate = "",
   initialEndDate = "",
+  organization,
 }: ClientLedgerProps) {
   const router = useRouter();
   const [startDate, setStartDate] = useState(initialStartDate);
@@ -121,23 +129,38 @@ export default function ClientLedger({
   });
 
   const getTypeBadge = (type: string, typeLabel: string) => {
+    const printOverride = "print:border-none print:bg-transparent print:text-black print:p-0 print:font-normal";
     switch (type) {
       case "SALE":
-        return <Badge variant="outline" className="border-blue-500/30 text-blue-600 bg-blue-50/50 dark:bg-blue-950/30 font-medium">Sale</Badge>;
+        return <Badge variant="outline" className={`border-blue-500/30 text-blue-600 bg-blue-50/50 dark:bg-blue-950/30 font-medium ${printOverride}`}>Sale</Badge>;
       case "RECEIPT":
-        return <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/30 font-medium">Receipt</Badge>;
+        return <Badge variant="outline" className={`border-emerald-500/30 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/30 font-medium ${printOverride}`}>Receipt</Badge>;
       case "PAYMENT":
-        return <Badge variant="outline" className="border-amber-500/30 text-amber-600 bg-amber-50/50 dark:bg-amber-950/30 font-medium">Payment</Badge>;
+        return <Badge variant="outline" className={`border-amber-500/30 text-amber-600 bg-amber-50/50 dark:bg-amber-950/30 font-medium ${printOverride}`}>Payment</Badge>;
       case "OPENING_BALANCE":
-        return <Badge variant="outline" className="border-purple-500/30 text-purple-600 bg-purple-50/50 dark:bg-purple-950/30 font-medium">Opening Balance</Badge>;
+        return <Badge variant="outline" className={`border-purple-500/30 text-purple-600 bg-purple-50/50 dark:bg-purple-950/30 font-medium ${printOverride}`}>Opening Balance</Badge>;
+      case "PRIOR_BALANCE":
+        return <Badge variant="outline" className={`border-slate-500/30 text-slate-600 bg-slate-50/50 dark:bg-slate-950/30 font-semibold ${printOverride}`}>Balance Forward</Badge>;
       default:
-        return <Badge variant="secondary" className="font-medium">{typeLabel}</Badge>;
+        return <Badge variant="secondary" className={`font-medium ${printOverride}`}>{typeLabel}</Badge>;
     }
   };
 
   return (
     <div className="space-y-6 print:p-0 print:space-y-4">
-      {/* Top Header Actions (hidden on print) */}
+      {/* Print-only: multi-page print fix + page numbering */}
+      <PrintStyle />
+
+      {/* Print-only Branded Header */}
+      <PrintHeader
+        docNumber={client.clientCode || client.id.slice(-8).toUpperCase()}
+        docTitle="CLIENT LEDGER STATEMENT"
+        organizationName={organization?.name}
+        organizationAddress={organization?.address}
+        organizationEmail={organization?.email}
+        organizationPhone={organization?.phone}
+      />
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:hidden">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
@@ -161,31 +184,12 @@ export default function ClientLedger({
         </div>
       </div>
 
-      {/* Minimalistic Print Header & Overview (Visible ONLY when printing) */}
-      <div className="hidden print:block space-y-4 mb-6">
-        <div className="flex justify-between items-start border-b pb-3">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight uppercase">Client Ledger Statement</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Statement Date: {format(new Date(), "dd MMMM yyyy")}
-              {startDate && endDate
-                ? ` | Period: ${format(new Date(startDate), "dd MMM yyyy")} to ${format(new Date(endDate), "dd MMM yyyy")}`
-                : " | Period: All Time"}
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-base font-bold">{client.name || "Client"}</div>
-            {client.clientCode && (
-              <div className="text-xs font-mono text-muted-foreground">Code: {client.clientCode}</div>
-            )}
-            {client.phone && <div className="text-xs text-muted-foreground">{client.phone}</div>}
-          </div>
-        </div>
-
-        {/* Minimalistic Overview Grid */}
-        <div className="grid grid-cols-2 gap-4 text-xs border rounded-md p-3 bg-muted/20">
-          <div className="space-y-1">
-            <div className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider mb-1">
+      {/* Print-only Summary Section — 2-col: entity details + account overview */}
+      <div className="hidden print:block mb-4">
+        <div className="grid grid-cols-2 text-[11px] border border-gray-300 rounded overflow-hidden">
+          {/* Left: Client Details */}
+          <div className="p-3 space-y-1 border-r border-gray-300">
+            <div className="font-semibold text-gray-500 uppercase text-[9px] tracking-widest mb-1.5">
               Client Details
             </div>
             <div>
@@ -216,37 +220,39 @@ export default function ClientLedger({
               </div>
             )}
           </div>
-          <div className="space-y-1.5 border-l pl-4">
-            <div className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider mb-1">
+
+          {/* Right: Account Overview Summary */}
+          <div className="p-3 space-y-1">
+            <div className="font-semibold text-gray-500 uppercase text-[9px] tracking-widest mb-1.5">
               Account Overview Summary
             </div>
-            <div className="flex justify-between border-b border-dashed pb-0.5">
-              <span className="text-muted-foreground">Opening Balance:</span>
-              <span className="font-mono font-medium">
+            <div className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+              <span className="text-gray-600 print:text-slate-700">Opening Balance:</span>
+              <span className="font-mono font-medium print:text-slate-900">
                 ৳{client.openingBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between border-b border-dashed pb-0.5">
-              <span className="text-muted-foreground">Total Billed (Sales):</span>
-              <span className="font-mono font-medium text-blue-700">
+            <div className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+              <span className="text-gray-600 print:text-slate-700">Total Billed (Sales):</span>
+              <span className="font-mono font-semibold text-blue-700 print:text-slate-900">
                 ৳{summary.totalBilled.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between border-b border-dashed pb-0.5">
-              <span className="text-muted-foreground">Total Paid (Received):</span>
-              <span className="font-mono font-medium text-emerald-700">
+            <div className="flex justify-between border-b border-dashed border-gray-200 pb-1">
+              <span className="text-gray-600 print:text-slate-700">Total Paid (Received):</span>
+              <span className="font-mono font-semibold text-emerald-700 print:text-slate-900">
                 ৳{summary.totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex justify-between pt-1 font-bold">
-              <span className="uppercase text-[10px]">Net Outstanding Due:</span>
+            <div className="flex justify-between pt-1">
+              <span className="font-bold uppercase text-[9px] tracking-wide print:text-slate-800">Net Outstanding Due:</span>
               <span
-                className={`font-mono text-sm ${
+                className={`font-mono font-black text-sm print:text-slate-900 print:font-bold print:text-xs ${
                   summary.closingBalance > 0
-                    ? "text-amber-700"
+                    ? "text-amber-600"
                     : summary.closingBalance < 0
-                    ? "text-emerald-700"
-                    : "text-slate-800"
+                    ? "text-emerald-600"
+                    : "text-gray-800"
                 }`}
               >
                 ৳{summary.closingBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -440,38 +446,41 @@ export default function ClientLedger({
       </Card>
 
       {/* Detailed Client Activity Ledger Table */}
-      <Card className="shadow-sm">
-        <CardHeader className="pb-3 border-b">
+      <Card className="shadow-sm print:border-none print:shadow-none">
+        <CardHeader className="pb-3 border-b print:pb-1 print:border-none print:px-0">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-lg font-bold">Client Transaction Activity Ledger</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg font-bold print:text-xs print:font-bold print:uppercase print:tracking-wider">Client Transaction Activity Ledger</CardTitle>
+              <CardDescription className="print:hidden">
                 Chronological record of sales, payments, vouchers, and running balance
               </CardDescription>
             </div>
-            <Badge variant="outline" className="font-mono">
+            <Badge variant="outline" className="font-mono print:hidden">
               {filteredLedger.length} Records
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow>
-                  <TableHead className="w-[100px] font-semibold">Date</TableHead>
-                  <TableHead className="w-[90px] font-semibold">Type</TableHead>
-                  <TableHead className="w-[100px] font-semibold print:hidden">Status</TableHead>
-                  <TableHead className="w-[120px] font-semibold">Reference #</TableHead>
-                  <TableHead className="w-[230px] max-w-[230px] font-semibold">Description / Notes</TableHead>
-                  <TableHead className="text-right w-[110px] font-semibold text-blue-600 dark:text-blue-400">
-                    Billed (Debit)
+        <CardContent className="p-0 print:pt-0">
+          <div className="overflow-x-auto print:overflow-visible">
+            <Table className="print-bordered">
+              <TableHeader className="bg-muted/50 print:bg-transparent">
+                <TableRow className="print:border-b print:border-slate-300">
+                  <TableHead className="w-[100px] print:w-[9%] font-semibold print:text-black print:text-[10px] print:px-1 whitespace-nowrap">Date</TableHead>
+                  <TableHead className="w-[90px] print:w-[6%] font-semibold print:text-black print:text-[10px] print:px-1 whitespace-nowrap">Type</TableHead>
+                  <TableHead className="w-[100px] font-semibold print:!hidden">Status</TableHead>
+                  <TableHead className="w-[120px] print:w-[11%] font-semibold print:text-black print:text-[10px] print:px-1 whitespace-nowrap">Reference #</TableHead>
+                  <TableHead className="min-w-[250px] print:w-[44%] font-semibold print:text-black print:text-[10px] print:px-1 print:whitespace-normal">Description / Notes</TableHead>
+                  <TableHead className="text-right w-[110px] print:w-[10%] font-semibold text-blue-600 dark:text-blue-400 print:text-black print:text-[10px] print:px-1 whitespace-nowrap">
+                    <span className="print:hidden">Billed (Debit)</span>
+                    <span className="hidden print:inline">Debit</span>
                   </TableHead>
-                  <TableHead className="text-right w-[110px] font-semibold text-emerald-600 dark:text-emerald-400">
-                    Paid (Credit)
+                  <TableHead className="text-right w-[110px] print:w-[10%] font-semibold text-emerald-600 dark:text-emerald-400 print:text-black print:text-[10px] print:px-1 whitespace-nowrap">
+                    <span className="print:hidden">Paid (Credit)</span>
+                    <span className="hidden print:inline">Credit</span>
                   </TableHead>
-                  <TableHead className="text-right w-[120px] font-semibold">
-                    Running Balance
+                  <TableHead className="text-right w-[120px] print:w-[10%] font-semibold print:text-black print:text-[10px] print:px-1 whitespace-nowrap">
+                    <span className="print:hidden">Running Balance</span>
+                    <span className="hidden print:inline">Balance</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -484,41 +493,43 @@ export default function ClientLedger({
                   </TableRow>
                 ) : (
                   filteredLedger.map((item) => (
-                    <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="font-medium whitespace-nowrap text-xs py-2">
+                    <TableRow key={item.id} className="hover:bg-muted/30 transition-colors print:border-b print:border-slate-200">
+                      <TableCell className="font-medium whitespace-nowrap text-xs py-2 print:text-black print:text-[10px] print:px-1 print:w-[9%]">
                         {format(new Date(item.date), "dd MMM yyyy")}
                       </TableCell>
-                      <TableCell className="py-2">{getTypeBadge(item.type, item.typeLabel)}</TableCell>
-                      <TableCell className="py-2 print:hidden">
+                      <TableCell className="py-2 print:text-black print:text-[10px] print:px-1 print:w-[6%] whitespace-nowrap">
+                        {getTypeBadge(item.type, item.typeLabel)}
+                      </TableCell>
+                      <TableCell className="py-2 print:!hidden">
                         <Badge variant="outline" className="text-[10px] font-mono uppercase bg-muted/30 px-1.5 py-0">
                           {item.status || "COMPLETED"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-xs font-semibold py-2 whitespace-nowrap">
+                      <TableCell className="font-mono text-xs font-semibold py-2 whitespace-nowrap print:text-black print:text-[10px] print:px-1 print:w-[11%]">
                         {item.reference}
                       </TableCell>
-                      <TableCell className="text-xs text-foreground/90 w-[230px] max-w-[230px] line-clamp-2 leading-snug whitespace-normal break-words py-2">
+                      <TableCell className="text-xs text-foreground/90 min-w-[250px] leading-snug whitespace-normal break-words py-2 print:text-black print:text-[10px] print:px-1 print:w-[44%] print:whitespace-normal">
                         {item.description}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-xs font-semibold text-blue-700 dark:text-blue-400 py-2">
-                        {item.debit > 0
+                      <TableCell className="text-right font-mono text-xs font-semibold text-blue-700 dark:text-blue-400 py-2 print:text-black print:text-[10px] print:px-1 print:font-normal print:w-[10%] whitespace-nowrap">
+                        {item.debit > 0 && item.type !== "PRIOR_BALANCE"
                           ? `৳${item.debit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 py-2">
-                        {item.credit > 0
+                      <TableCell className="text-right font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 py-2 print:text-black print:text-[10px] print:px-1 print:font-normal print:w-[10%] whitespace-nowrap">
+                        {item.credit > 0 && item.type !== "PRIOR_BALANCE"
                           ? `৳${item.credit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-xs font-bold py-2">
+                      <TableCell className="text-right font-mono text-xs font-bold py-2 print:text-black print:text-[10px] print:px-1 print:font-bold print:w-[10%] whitespace-nowrap">
                         <span
-                          className={
+                          className={`print:text-black print:font-bold ${
                             item.runningBalance > 0
                               ? "text-amber-600 dark:text-amber-400"
                               : item.runningBalance < 0
                               ? "text-emerald-600 dark:text-emerald-400"
                               : "text-muted-foreground"
-                          }
+                          }`}
                         >
                           ৳
                           {item.runningBalance.toLocaleString("en-US", {

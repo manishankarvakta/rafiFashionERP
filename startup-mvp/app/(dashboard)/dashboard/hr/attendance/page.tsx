@@ -7,22 +7,24 @@ import AttendanceListClient from "./_components/attendance-list";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import BiometricSyncButton from "./_components/biometric-sync-button";
-import { getDepartments } from "../../employees/departments/_actions/department.action";
-import { getDesignationsByDepartment } from "../../employees/_actions/designation.action";
+import { getPayrollSettings } from "@/lib/payroll-settings";
 
 interface AttendancePageProps {
   searchParams: Promise<{
     page?: string;
     limit?: string;
     search?: string;
-    productionLineId?: string;
+    warehouseId?: string;
     deviceId?: string;
     employeeId?: string;
     fromDate?: string;
     toDate?: string;
     status?: string;
     departmentId?: string;
-    designation?: string;
+    designationId?: string;
+    floorId?: string;
+    lineId?: string;
+    skill?: string;
   }>;
 }
 
@@ -30,13 +32,16 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const params = await searchParams;
   
   const page = parseInt(params.page || "1", 10);
-  const limit = parseInt(params.limit || "10", 10);
+  const limit = parseInt(params.limit || "20", 10);
   const search = params.search || "";
-  const productionLineId = params.productionLineId || undefined;
+  const warehouseId = params.warehouseId || undefined;
   const deviceId = params.deviceId || undefined;
   const employeeId = params.employeeId || undefined;
   const departmentId = params.departmentId || undefined;
-  const designation = params.designation || undefined;
+  const designationId = params.designationId || undefined;
+  const floorId = params.floorId || undefined;
+  const lineId = params.lineId || undefined;
+  const skill = params.skill || undefined;
   
   // Set default date range if not provided (e.g. today)
   const today = new Date().toISOString().split("T")[0];
@@ -47,25 +52,27 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const session = await auth();
   const userId = session?.user?.id;
 
-  // Check permissions and fetch data concurrently
-  const [result, departmentsResult, designationsResult, canView, canEdit] = await Promise.all([
+  // Check permissions & settings
+  const [result, canView, canEdit, payrollSettings] = await Promise.all([
     getAttendanceRecordsPaginated({
       page,
       limit,
       search,
-      productionLineId,
+      warehouseId,
       deviceId,
       employeeId,
       fromDate,
       toDate,
       status,
       departmentId,
-      designation
+      designationId,
+      floorId,
+      lineId,
+      skill,
     }),
-    getDepartments(1, 100, "", "active"),
-    getDesignationsByDepartment(departmentId),
     userId ? hasPermission(userId, "hr.attendance", "view") : false,
     userId ? hasPermission(userId, "hr.attendance", "edit") : false,
+    getPayrollSettings(),
   ]);
 
   if (!result.success) {
@@ -85,9 +92,6 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
       </div>
     );
   }
-
-  const departments = departmentsResult.success && departmentsResult.departments ? (departmentsResult.departments as any[]) : [];
-  const designations = designationsResult.success && designationsResult.designations ? designationsResult.designations : [];
 
   return (
     <div className="space-y-6">
@@ -119,26 +123,28 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
 
       <AttendanceListClient
         initialAttendances={result.attendances || []}
-        pagination={result.pagination}
-        departments={departments}
-        designations={designations}
+        pagination={result.pagination || { page: 1, limit: 20, total: 0, pages: 0 }}
         filters={{
           page,
           limit,
           search,
-          productionLineId: productionLineId || "",
+          warehouseId: warehouseId || "",
           deviceId: deviceId || "",
           employeeId: employeeId || "",
           fromDate,
           toDate,
           status: status || "ALL",
-          departmentId: departmentId || "all",
-          designation: designation || "all",
+          departmentId: departmentId || "",
+          designationId: designationId || "",
+          floorId: floorId || "",
+          lineId: lineId || "",
+          skill: skill || "",
         }}
         permissions={{
           view: canView,
           edit: canEdit,
         }}
+        weekends={payrollSettings.calculation.weekends}
       />
     </div>
   );

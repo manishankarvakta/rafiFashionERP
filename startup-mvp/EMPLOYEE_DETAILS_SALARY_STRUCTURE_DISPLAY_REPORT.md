@@ -10,20 +10,20 @@ This upgrade implements:
 
 ## 2. Files Changed
 * **Action Layer**:
-  * [employee.action.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/_actions/employee.action.tsx)
-  * [payroll.action.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/payroll/_actions/payroll.action.ts)
+  * [employee.action.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/_actions/employee.action.tsx)
+  * [payroll.action.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/payroll/_actions/payroll.action.ts)
 * **View/Component Layer**:
-  * [details/page.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/employees/details/page.tsx)
-  * [payroll-details.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/_components/payroll-details.tsx)
-  * [page.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/payslips/%5BitemId%5D/page.tsx)
-  * [page.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/payslips/print/page.tsx) [NEW]
-  * [print-all-client.tsx](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/payslips/print/_components/print-all-client.tsx) [NEW]
+  * [details/page.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/employees/details/page.tsx)
+  * [payroll-details.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/_components/payroll-details.tsx)
+  * [page.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/payslips/%5BitemId%5D/page.tsx)
+  * [page.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/payslips/print/page.tsx) [NEW]
+  * [print-all-client.tsx](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/payslips/print/_components/print-all-client.tsx) [NEW]
 * **API/Export Layer**:
-  * [route.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/export/route.ts)
+  * [route.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/app/(dashboard)/dashboard/hr/payroll/%5Bid%5D/export/route.ts)
 * **Verification**:
-  * [test-employee-salary-display.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/scratch/test-employee-salary-display.ts)
-  * [test-payroll-display.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/scratch/test-payroll-display.ts)
-  * [test-print-all-route.ts](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/scratch/test-print-all-route.ts) [NEW]
+  * [test-employee-salary-display.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/scratch/test-employee-salary-display.ts)
+  * [test-payroll-display.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/scratch/test-payroll-display.ts)
+  * [test-print-all-route.ts](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/scratch/test-print-all-route.ts) [NEW]
 
 ---
 

@@ -87,7 +87,7 @@ We executed `scratch/verify-hr-payroll-policy-system.ts`:
 ---
 
 ## 8. Final Documentation Created
-- Created [HR_PAYROLL_POLICY_SYSTEM_FINAL_GUIDE.md](file:///Users/manishankarvakta/Desktop/APPS/rafierp/startup-mvp/docs/HR_PAYROLL_POLICY_SYSTEM_FINAL_GUIDE.md) containing system concept definitions, step-by-step setup walkthroughs, full math formulas, and transaction safety guidelines.
+- Created [HR_PAYROLL_POLICY_SYSTEM_FINAL_GUIDE.md](file:///Users/manishankarvakta/Desktop/APPS/ffERP/startup-mvp/docs/HR_PAYROLL_POLICY_SYSTEM_FINAL_GUIDE.md) containing system concept definitions, step-by-step setup walkthroughs, full math formulas, and transaction safety guidelines.
 
 ---
 

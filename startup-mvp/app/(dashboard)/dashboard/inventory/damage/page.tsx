@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import DamageList, { DamagesHeaderActions } from "./_components/damage-list";
 import { getDamages } from "./_actions/damage.action";
+import PrintHeader, { PrintStyle } from "../../procurements/_components/print-header";
 import { getActiveWarehouses } from "@/app/(dashboard)/dashboard/inventory/stock/_actions/stock.action";
 import { getAccountingOperationSettings } from "@/lib/accounting-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -18,6 +19,7 @@ interface DamagePageProps {
     tab?: string;
     startDate?: string;
     endDate?: string;
+    limit?: string;
   }>;
 }
 
@@ -26,6 +28,7 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
   const userId = session?.user?.id || "";
   const params = await searchParams;
   const page = Number(params.page) || 1;
+  const limit = Number(params.limit) || 20;
   const search = params.search || "";
   const tab = params.tab || "active";
   const isTrash = tab === "trash";
@@ -48,7 +51,7 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
     : (params.warehouseId || "all");
 
   const [res, warehousesRes, settings] = await Promise.all([
-    getDamages(page, 10, {
+    getDamages(page, limit, {
       search,
       warehouseId: selectedWarehouseId,
       isTrash,
@@ -60,7 +63,7 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
   ]);
 
   const damages = res.success ? res.damages : [];
-  const totalPages = res.success ? res.pagination?.totalPages || 1 : 1;
+  const pagination = res.success ? res.pagination : { page: 1, limit, total: 0, totalPages: 0 };
   
   const activeWarehouses = !isNormalUser
     ? (warehousesRes.success ? warehousesRes.warehouses : [])
@@ -76,7 +79,9 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <PrintStyle />
+      <PrintHeader docTitle="Inventory Damage List" docNumber="DAMAGE-LIST" hideBarcode={true} />
+      <div className="flex justify-between items-center print:hidden">
         <div>
           <h1 className="text-2xl font-semibold">Inventory Damage</h1>
           <p className="text-sm text-muted-foreground">Record and manage damaged stock.</p>
@@ -97,7 +102,7 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
       )}
 
       <Tabs defaultValue={tab} className="w-full">
-        <TabsList>
+        <TabsList className="print:hidden">
           <TabsTrigger value="active" asChild>
             <Link href={`?tab=active&page=1&warehouseId=${selectedWarehouseId}&startDate=${startDate}&endDate=${endDate}`}>Active</Link>
           </TabsTrigger>
@@ -109,8 +114,7 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
         <TabsContent value="active" className="mt-4">
           <DamageList 
             initialData={damages || []} 
-            totalPages={totalPages}
-            currentPage={page}
+            pagination={pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }}
             warehouses={activeWarehouses}
             selectedWarehouseId={selectedWarehouseId}
             startDate={startDate}
@@ -122,8 +126,7 @@ export default async function DamagePage({ searchParams }: DamagePageProps) {
         <TabsContent value="trash" className="mt-4">
           <DamageList 
             initialData={damages || []} 
-            totalPages={totalPages}
-            currentPage={page}
+            pagination={pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }}
             warehouses={activeWarehouses}
             selectedWarehouseId={selectedWarehouseId}
             startDate={startDate}

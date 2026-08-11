@@ -147,6 +147,114 @@ export default function StocksListClient({
     router.push(`/dashboard/inventory/stock?${params.toString()}`);
   };
 
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", newPage.toString());
+    router.push(`/dashboard/inventory/stock?${params.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("limit", newLimit.toString());
+    params.set("page", "1");
+    router.push(`/dashboard/inventory/stock?${params.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(initialPagination.limit)}
+          onValueChange={(val) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(initialPagination.limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    if (initialPagination.totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page - 1)}
+          disabled={initialPagination.page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(initialPagination.page, initialPagination.totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === initialPagination.page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page + 1)}
+          disabled={initialPagination.page === initialPagination.totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
+
   const formatQuantity = (qty: any) => {
     if (!qty) return "0.00";
     return Number(qty).toLocaleString("en-BD", {
@@ -163,55 +271,71 @@ export default function StocksListClient({
 
   return (
     <div className="space-y-4">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Reduce table padding and font size for clean print layout */
+          .print-bordered th,
+          .print-bordered td {
+            padding: 4px 6px !important;
+            font-size: 8.5pt !important;
+          }
+        }
+      `}} />
       {/* Search and Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 max-w-sm">
-          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by item name, code, or warehouse..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-10"
-          />
-          {search && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-              onClick={() => handleSearch("")}
-            >
-              <FiX className="h-4 w-4" />
-            </Button>
-          )}
+      <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
+        <div className="flex items-center gap-2 flex-wrap flex-1">
+          <div className="relative flex-1 max-w-sm">
+            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by item name, code, or warehouse..."
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-10"
+            />
+            {search && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => handleSearch("")}
+              >
+                <FiX className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          <Select value={warehouseFilter} onValueChange={handleWarehouseFilter} disabled={isNormalUser}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filter by warehouse" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Warehouses</SelectItem>
+              {warehouses.map((warehouse) => (
+                <SelectItem key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name} ({warehouse.code})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-
-        <Select value={warehouseFilter} onValueChange={handleWarehouseFilter} disabled={isNormalUser}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Filter by warehouse" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Warehouses</SelectItem>
-            {warehouses.map((warehouse) => (
-              <SelectItem key={warehouse.id} value={warehouse.id}>
-                {warehouse.name} ({warehouse.code})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-4">
+          {renderLimitSelector()}
+          {renderPaginationButtons()}
+        </div>
       </div>
 
       {/* Stocks Table */}
       <div className="rounded-md border">
-        <Table>
+        <Table className="print-bordered">
           <TableHeader>
             <TableRow>
-              <TableHead>Item</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead className="text-right">Quantity</TableHead>
-              <TableHead className="text-right">Reserved</TableHead>
-              <TableHead className="text-right">Available</TableHead>
-              <TableHead>Last Updated</TableHead>
+              <TableHead className="print:w-[30%] whitespace-nowrap">Item</TableHead>
+              <TableHead className="print:w-[25%] whitespace-nowrap">Warehouse</TableHead>
+              <TableHead className="text-right print:w-[12.5%] whitespace-nowrap">Quantity</TableHead>
+              <TableHead className="text-right print:w-[12.5%] whitespace-nowrap">Reserved</TableHead>
+              <TableHead className="text-right print:w-[12.5%] whitespace-nowrap">Available</TableHead>
+              <TableHead className="print:w-[7.5%] whitespace-nowrap">Last Updated</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -228,9 +352,9 @@ export default function StocksListClient({
 
                 return (
                   <TableRow key={stock.id}>
-                    <TableCell>
+                    <TableCell className="print:whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded border bg-muted overflow-hidden flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded border bg-muted overflow-hidden flex items-center justify-center shrink-0 print:hidden">
                           {stock.item.featuredImage || (stock.item.images && Array.isArray(stock.item.images) && stock.item.images.length > 0) ? (
                             <img 
                               src={stock.item.featuredImage || stock.item.images[0]} 
@@ -244,16 +368,16 @@ export default function StocksListClient({
                         <div>
                           <Link
                             href={`/dashboard/master/items/${stock.item.id}`}
-                            className="font-medium hover:underline block leading-tight text-foreground"
+                            className="font-medium hover:underline block leading-tight text-foreground print:text-black"
                           >
                             {stock.item.name}
                           </Link>
                           <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                            <span className="text-[11px] text-muted-foreground font-mono">
+                            <span className="text-[11px] text-muted-foreground font-mono print:text-black">
                               {stock.item.code}
                             </span>
                             {stock.item.variant && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted border border-border text-muted-foreground font-sans">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted border border-border text-muted-foreground font-sans print:text-black print:border-black/20">
                                 {stock.item.variant.color} / {stock.item.variant.size}
                               </span>
                             )}
@@ -261,38 +385,38 @@ export default function StocksListClient({
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <FiBox className="h-4 w-4 text-muted-foreground" />
+                        <FiBox className="h-4 w-4 text-muted-foreground print:hidden" />
                         <div>
                           <Link
                             href={`/dashboard/inventory/warehouses/${stock.warehouse.id}`}
-                            className="font-medium hover:underline"
+                            className="font-medium hover:underline print:text-black"
                           >
                             {stock.warehouse.name}
                           </Link>
-                          <p className="text-xs text-muted-foreground font-mono">
+                          <p className="text-xs text-muted-foreground font-mono print:text-black">
                             {stock.warehouse.code}
                           </p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right font-mono">
+                    <TableCell className="text-right font-mono print:text-black print:whitespace-nowrap">
                       {formatQuantity(stock.quantity)} {stock.item.unit.symbol}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-muted-foreground">
+                    <TableCell className="text-right font-mono text-muted-foreground print:text-black print:whitespace-nowrap">
                       {formatQuantity(stock.reservedQuantity)} {stock.item.unit.symbol}
                     </TableCell>
                     <TableCell
                       className={cn(
-                        "text-right font-mono font-semibold",
-                        isLowStock && "text-orange-600",
+                        "text-right font-mono font-semibold print:whitespace-nowrap print:font-bold",
+                        isLowStock ? "text-orange-600 print:text-black" : "print:text-black",
                         available < 0 && "text-destructive"
                       )}
                     >
                       {formatQuantity(available)} {stock.item.unit.symbol}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground print:text-black print:whitespace-nowrap">
                       {format(new Date(stock.lastUpdated), "MMM d, yyyy HH:mm")}
                     </TableCell>
                   </TableRow>
@@ -304,42 +428,17 @@ export default function StocksListClient({
       </div>
 
       {/* Pagination */}
-      {initialPagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
-            {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
-            {initialPagination.total} stock records
+      {(initialPagination.totalPages > 1 || initialPagination.total > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 print:hidden">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
+              {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
+              {initialPagination.total} stock records
+            </div>
+            {renderLimitSelector()}
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(Math.max(1, initialPagination.page - 1)));
-                router.push(`/dashboard/inventory/stock?${params.toString()}`);
-              }}
-              disabled={initialPagination.page === 1 || isPending}
-            >
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {initialPagination.page} of {initialPagination.totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(Math.min(initialPagination.totalPages, initialPagination.page + 1)));
-                router.push(`/dashboard/inventory/stock?${params.toString()}`);
-              }}
-              disabled={initialPagination.page === initialPagination.totalPages || isPending}
-            >
-              Next
-            </Button>
-          </div>
+          {renderPaginationButtons()}
         </div>
       )}
     </div>

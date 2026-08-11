@@ -14,6 +14,7 @@ import {
 import HolidaysListClient from "./_components/holidays";
 import CalendarView from "./_components/calendar-view";
 import CalendarControls from "./_components/calendar-controls";
+import ExportHolidaysButton from "./_components/ExportHolidaysButton";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { parseISO, format } from "date-fns";
@@ -24,6 +25,7 @@ interface HolidaysPageProps {
     search?: string;
     tab?: string;
     month?: string;
+    limit?: string;
   }>;
 }
 
@@ -43,6 +45,7 @@ function formatShortDate(date: Date): string {
 export default async function HolidaysPage({ searchParams }: HolidaysPageProps) {
   const params = await searchParams;
   const page   = parseInt(params.page  || "1");
+  const limit  = parseInt(params.limit || "20");
   const search = params.search || "";
   const tab    = params.tab   || "all";
   const monthParam = params.month;
@@ -54,7 +57,7 @@ export default async function HolidaysPage({ searchParams }: HolidaysPageProps) 
 
   const [result, statsResult, canView, canEdit, canMoveToTrash, canDeletePermanently] =
     await Promise.all([
-      getHolidays(page, 10, search, tab === "trash" ? "trash" : "all"),
+      getHolidays(page, limit, search, tab === "trash" ? "trash" : "all"),
       getHolidayStats(),
       userId ? hasPermission(userId, "hr.holidays", "view")               : false,
       userId ? hasPermission(userId, "hr.holidays", "edit")               : false,
@@ -138,14 +141,17 @@ export default async function HolidaysPage({ searchParams }: HolidaysPageProps) 
             )}
           </div>
         </div>
-        {tab !== "trash" && canEdit && (
-          <Button asChild size="sm" className="h-9">
-            <Link href="/dashboard/hr/holidays/add">
-              <FiPlus className="mr-2 h-4 w-4" />
-              Add Holiday
-            </Link>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <ExportHolidaysButton search={search} tab={tab} />
+          {tab !== "trash" && canEdit && (
+            <Button asChild size="sm" className="h-9">
+              <Link href="/dashboard/hr/holidays/add">
+                <FiPlus className="mr-2 h-4 w-4" />
+                Add Holiday
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* ── Tabs + list ─────────────────────────────────────────────────── */}
@@ -176,7 +182,7 @@ export default async function HolidaysPage({ searchParams }: HolidaysPageProps) 
         <TabsContent value="all" className="mt-4">
           <HolidaysListClient
             initialHolidays={result.holidays || []}
-            initialPagination={result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }}
+            initialPagination={result.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }}
             initialSearch={search}
             isTrash={false}
             userId={userId}
@@ -196,7 +202,7 @@ export default async function HolidaysPage({ searchParams }: HolidaysPageProps) 
         <TabsContent value="trash" className="mt-4">
           <HolidaysListClient
             initialHolidays={result.holidays || []}
-            initialPagination={result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }}
+            initialPagination={result.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }}
             initialSearch={search}
             isTrash={true}
             userId={userId}

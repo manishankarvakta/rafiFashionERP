@@ -32,6 +32,9 @@ import Link from "next/link";
 import { FiSearch, FiEdit, FiTrash2, FiX, FiCircle, FiCheck, FiMoreVertical, FiEye, FiRotateCw, FiImage, FiBook } from "react-icons/fi";
 import { deleteEmployee, bulkUpdateEmployeeStatus, deleteEmployeesPermanently } from "../_actions/employee.action";
 import ProtectedAction from "@/components/permissions/protected-action";
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import SyncBiometricButton from "./sync-biometric-button";
+import ExportButtons from "./export-buttons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -141,11 +144,18 @@ interface EmployeesListClientProps {
   status?: string;
   departments?: { id: string; name: string }[];
   departmentId?: string;
-  designations?: string[];
-  designation?: string;
+  designations?: { id: string; name: string }[];
+  designationId?: string;
+  floors?: { id: string; name: string }[];
+  floorId?: string;
+  lines?: { id: string; name: string }[];
+  lineId?: string;
+  allSkills?: string[];
+  skill?: string;
   permissions?: {
     view: boolean;
     edit: boolean;
+    create?: boolean;
     moveToTrash: boolean;
     deletePermanently: boolean;
     viewLedger?: boolean;
@@ -165,7 +175,13 @@ export default function EmployeesListClient({
   departments = [],
   departmentId = "all",
   designations = [],
-  designation = "all",
+  designationId = "all",
+  floors = [],
+  floorId = "all",
+  lines = [],
+  lineId = "all",
+  allSkills = [],
+  skill = "all",
   permissions,
 }: EmployeesListClientProps) {
   const router = useRouter();
@@ -177,7 +193,10 @@ export default function EmployeesListClient({
     (gender && gender !== "all") || 
     (status && status !== "all") ||
     (departmentId && departmentId !== "all") ||
-    (designation && designation !== "all")
+    (designationId && designationId !== "all") ||
+    (floorId && floorId !== "all") ||
+    (lineId && lineId !== "all") ||
+    (skill && skill !== "all")
   );
   const [deleteEmployeeId, setDeleteEmployeeId] = useState<string | null>(null);
   const [restoreEmployeeId, setRestoreEmployeeId] = useState<string | null>(null);
@@ -185,15 +204,128 @@ export default function EmployeesListClient({
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", page.toString());
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/employees?${params.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("limit", newLimit.toString());
+    params.set("page", "1");
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/employees?${params.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(initialPagination.limit)}
+          onValueChange={(val: string) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(initialPagination.limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    if (initialPagination.totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page - 1)}
+          disabled={initialPagination.page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(initialPagination.page, initialPagination.totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === initialPagination.page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page + 1)}
+          disabled={initialPagination.page === initialPagination.totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
+
   const handleFilterChange = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== "all") {
       params.set(key, value);
     } else {
       params.delete(key);
-    }
-    if (key === "departmentId") {
-      params.delete("designation");
     }
     params.set("page", "1");
     router.push(`/dashboard/employees?${params.toString()}`);
@@ -339,7 +471,105 @@ export default function EmployeesListClient({
 
   return (
     <div className="space-y-4">
-      {/* Search, Filters and Bulk Actions */}
+      {/* Subheader: Tabs & Bulk Actions on left, Actions on right */}
+      <div className="flex justify-between items-center flex-wrap gap-4 mb-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <TabsList>
+            <TabsTrigger value="all" asChild>
+              <Link href="/dashboard/employees?tab=all&page=1">All Employees</Link>
+            </TabsTrigger>
+            <TabsTrigger value="trash" asChild>
+              <Link href="/dashboard/employees?tab=trash&page=1">Trash</Link>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Bulk Actions Dropdown beside Tabs */}
+          <div className="flex items-center gap-2">
+            {selectedEmployees.size > 0 && (
+              <span className="text-sm text-muted-foreground whitespace-nowrap font-medium">
+                {selectedEmployees.size} selected
+              </span>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  disabled={isPending || selectedEmployees.size === 0}
+                >
+                  <FiMoreVertical className="mr-2 h-4 w-4" />
+                  Bulk Actions
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {!isTrash ? (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => handleBulkAction("trash")}
+                      disabled={selectedEmployees.size === 0}
+                    >
+                      <FiTrash2 className="mr-2 h-4 w-4" />
+                      Move to Trash
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBulkAction("active")}
+                      disabled={selectedEmployees.size === 0}
+                    >
+                      <FiCheck className="mr-2 h-4 w-4" />
+                      Activate
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBulkAction("inactive")}
+                      disabled={selectedEmployees.size === 0}
+                    >
+                      <FiCircle className="mr-2 h-4 w-4" />
+                      Deactivate
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => handleBulkAction("restore")}
+                      disabled={selectedEmployees.size === 0}
+                    >
+                      <FiCheck className="mr-2 h-4 w-4" />
+                      Restore Selected
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBulkAction("permanent-delete")}
+                      disabled={selectedEmployees.size === 0}
+                      className="text-destructive"
+                    >
+                      <FiTrash2 className="mr-2 h-4 w-4" />
+                      Delete Permanently
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {permissions?.edit && <SyncBiometricButton />}
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/hr/attendance">
+              Attendance Sheet
+            </Link>
+          </Button>
+          <ExportButtons
+            filters={{
+              search,
+              status,
+              employeeTypeId,
+              gender,
+              departmentId,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Search & Filters Row */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[240px] max-w-sm">
@@ -402,21 +632,80 @@ export default function EmployeesListClient({
             </Select>
           </div>
 
-          {/* Designation Filter (Dependent on Department) */}
+          {/* Designation Filter */}
           <div className="w-[180px]">
             <Select
-              value={designation}
-              onValueChange={(val) => handleFilterChange("designation", val)}
-              disabled={departmentId === "all"}
+              value={designationId}
+              onValueChange={(val) => handleFilterChange("designationId", val)}
             >
               <SelectTrigger>
-                <SelectValue placeholder={departmentId === "all" ? "Select Dept First" : "All Designations"} />
+                <SelectValue placeholder="All Designations" />
               </SelectTrigger>
               <SelectContent className="max-h-[250px]">
                 <SelectItem value="all">All Designations</SelectItem>
                 {designations.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Floor Filter */}
+          <div className="w-[180px]">
+            <Select
+              value={floorId}
+              onValueChange={(val) => handleFilterChange("floorId", val)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Floors" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[250px]">
+                <SelectItem value="all">All Floors</SelectItem>
+                {floors.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Line Filter */}
+          <div className="w-[180px]">
+            <Select
+              value={lineId}
+              onValueChange={(val) => handleFilterChange("lineId", val)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Lines" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[250px]">
+                <SelectItem value="all">All Lines</SelectItem>
+                {lines.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    {l.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Skill Filter */}
+          <div className="w-[180px]">
+            <Select
+              value={skill}
+              onValueChange={(val) => handleFilterChange("skill", val)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Skills" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[250px]">
+                <SelectItem value="all">All Skills</SelectItem>
+                {allSkills.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -473,74 +762,8 @@ export default function EmployeesListClient({
               Clear Filters
             </Button>
           )}
-
-          {/* Bulk Actions Dropdown */}
-          <div className="flex items-center gap-2 ml-auto">
-            {selectedEmployees.size > 0 && (
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                {selectedEmployees.size} selected
-              </span>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  disabled={isPending || selectedEmployees.size === 0}
-                >
-                  <FiMoreVertical className="mr-2 h-4 w-4" />
-                  Bulk Actions
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-              {!isTrash ? (
-                <>
-                  <DropdownMenuItem
-                    onClick={() => handleBulkAction("trash")}
-                    disabled={selectedEmployees.size === 0}
-                  >
-                    <FiTrash2 className="mr-2 h-4 w-4" />
-                    Move to Trash
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleBulkAction("active")}
-                    disabled={selectedEmployees.size === 0}
-                  >
-                    <FiCheck className="mr-2 h-4 w-4" />
-                    Activate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleBulkAction("inactive")}
-                    disabled={selectedEmployees.size === 0}
-                  >
-                    <FiCircle className="mr-2 h-4 w-4" />
-                    Deactivate
-                  </DropdownMenuItem>
-                </>
-              ) : (
-                <>
-                  <DropdownMenuItem
-                    onClick={() => handleBulkAction("restore")}
-                    disabled={selectedEmployees.size === 0}
-                  >
-                    <FiCheck className="mr-2 h-4 w-4" />
-                    Restore
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleBulkAction("delete-permanently")}
-                    className="text-destructive"
-                    disabled={selectedEmployees.size === 0}
-                  >
-                    <FiTrash2 className="mr-2 h-4 w-4" />
-                    Delete Permanently
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
-    </div>
 
       {/* Table */}
       <div className="border rounded-lg">
@@ -733,47 +956,17 @@ export default function EmployeesListClient({
       </div>
 
       {/* Pagination */}
-      {initialPagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
-            {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
-            {initialPagination.total} employees
+      {(initialPagination.totalPages > 1 || initialPagination.total > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
+              {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
+              {initialPagination.total} employees
+            </div>
+            {renderLimitSelector()}
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === 1}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page - 1));
-                const tab = searchParams.get("tab") || "all";
-                if (tab) {
-                  params.set("tab", tab);
-                }
-                router.push(`/dashboard/employees?${params.toString()}`);
-              }}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === initialPagination.totalPages}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page + 1));
-                const tab = searchParams.get("tab") || "all";
-                if (tab) {
-                  params.set("tab", tab);
-                }
-                router.push(`/dashboard/employees?${params.toString()}`);
-              }}
-            >
-              Next
-            </Button>
-          </div>
+          {renderPaginationButtons()}
         </div>
       )}
 

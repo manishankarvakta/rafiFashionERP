@@ -27,7 +27,7 @@ export async function getPayrollAttendanceWarnings(input: { fromDate: Date, toDa
       severity: "critical",
       count: unknownPunches,
       message: "Some biometric punches are not mapped to employees. Please resolve them before generating payroll to ensure accurate attendance.",
-      href: "/dashboard/hr/biometric/devices"
+      href: "/dashboard/hr/biometric/unmapped-logs"
     });
   }
 
@@ -95,16 +95,25 @@ export async function getPayrollAttendanceWarnings(input: { fromDate: Date, toDa
     });
   }
 
-  // 4. Missing Attendance (Basic check)
-  const activeEmployees = await prisma.employee.count({
+  // 4. Missing Attendance — only count employees who were active DURING this period
+  // (i.e. joined on or before the last day of the period, same logic as payroll generation)
+  const activeEmployeesInPeriod = await prisma.employee.findMany({
     where: {
       status: "active",
-    }
+      OR: [
+        { joiningDate: null },
+        { joiningDate: { lte: toDate } }
+      ]
+    },
+    select: { id: true }
   });
-  
+
+  const activeEmployeeIds = activeEmployeesInPeriod.map(e => e.id);
+
   const employeesWithAttendance = await prisma.attendance.groupBy({
     by: ['employeeId'],
     where: {
+      employeeId: { in: activeEmployeeIds },
       date: {
         gte: fromDate,
         lte: toDate,
@@ -112,7 +121,7 @@ export async function getPayrollAttendanceWarnings(input: { fromDate: Date, toDa
     }
   });
   
-  const missingAttendance = Math.max(0, activeEmployees - employeesWithAttendance.length);
+  const missingAttendance = Math.max(0, activeEmployeeIds.length - employeesWithAttendance.length);
 
   if (missingAttendance > 0) {
     warnings.push({
@@ -120,7 +129,7 @@ export async function getPayrollAttendanceWarnings(input: { fromDate: Date, toDa
       severity: "info",
       count: missingAttendance,
       message: `There are active employees with ZERO attendance records in this period. Ensure logs are synced.`,
-      href: "/dashboard/hr/attendance"
+      href: "/dashboard/hr/biometric/unmapped-logs"
     });
   }
 

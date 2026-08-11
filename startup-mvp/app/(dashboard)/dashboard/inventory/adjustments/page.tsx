@@ -4,6 +4,7 @@ import { hasPermission } from "@/lib/permissions";
 import PageGuard from "@/components/permissions/page-guard";
 import { getAdjustments } from "./_actions/adjustment.action";
 import AdjustmentList, { AdjustmentsHeaderActions } from "./_components/adjustment-list";
+import PrintHeader, { PrintStyle } from "../../procurements/_components/print-header";
 import { getActiveWarehouses } from "@/app/(dashboard)/dashboard/inventory/stock/_actions/stock.action";
 import { prisma } from "@/lib/prisma";
 
@@ -14,6 +15,7 @@ interface PageProps {
     warehouseId?: string;
     startDate?: string;
     endDate?: string;
+    limit?: string;
   }>;
 }
 
@@ -22,6 +24,7 @@ export default async function AdjustmentPage({ searchParams }: PageProps) {
   const userId = session?.user?.id || "";
   const params = await searchParams;
   const page = Number(params.page) || 1;
+  const limit = Number(params.limit) || 20;
 
   const todayStr = new Date().toISOString().split("T")[0];
   const startDate = params.startDate || todayStr;
@@ -42,7 +45,7 @@ export default async function AdjustmentPage({ searchParams }: PageProps) {
 
   const warehousesResult = await getActiveWarehouses();
 
-  const { adjustments, pagination, success, error } = await getAdjustments(page, 10, {
+  const { adjustments, pagination, success, error } = await getAdjustments(page, limit, {
     search: params.search,
     warehouseId: selectedWarehouseId,
     startDate,
@@ -68,7 +71,9 @@ export default async function AdjustmentPage({ searchParams }: PageProps) {
   return (
     <PageGuard permissionKey="inventory.adjustments" requiredOperation="view">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <PrintStyle />
+        <PrintHeader docTitle="Inventory Adjustments List" docNumber="ADJ-LIST" hideBarcode={true} />
+        <div className="flex items-center justify-between print:hidden">
           <div>
             <h1 className="text-2xl font-semibold">Inventory Adjustments</h1>
             <p className="text-sm text-muted-foreground">Manage stock adjustments and corrections</p>
@@ -81,7 +86,7 @@ export default async function AdjustmentPage({ searchParams }: PageProps) {
 
         <AdjustmentList 
           adjustments={adjustments || []} 
-          pagination={pagination || { page: 1, totalPages: 1, total: 0, limit: 10 }}
+          pagination={pagination || { page: 1, totalPages: 1, total: 0, limit: 20 }}
           warehouses={activeWarehouses}
           selectedWarehouseId={selectedWarehouseId}
           startDate={startDate}

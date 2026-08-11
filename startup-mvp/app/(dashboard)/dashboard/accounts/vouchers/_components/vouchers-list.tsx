@@ -30,6 +30,11 @@ interface Voucher {
   reference: string | null;
   description: string | null;
   status: string;
+  totalAmount?: number;
+  voucherLines?: Array<{
+    debitAmount: number;
+    creditAmount: number;
+  }>;
   client: {
     id: string;
     name: string;
@@ -73,6 +78,7 @@ interface VouchersListClientProps {
   };
   warehouses?: Array<{ id: string; name: string; code: string }>;
   selectedWarehouseId?: string;
+  selectedType?: string;
   isAdmin?: boolean;
 }
 
@@ -84,6 +90,7 @@ export default function VouchersListClient({
   permissions,
   warehouses = [],
   selectedWarehouseId = "",
+  selectedType = "all",
   isAdmin = false,
 }: VouchersListClientProps) {
   const router = useRouter();
@@ -91,6 +98,114 @@ export default function VouchersListClient({
   const [search, setSearch] = useState(initialSearch);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", page.toString());
+    router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("limit", newLimit.toString());
+    params.set("page", "1");
+    router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(initialPagination.limit)}
+          onValueChange={(val: string) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(initialPagination.limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    if (initialPagination.totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page - 1)}
+          disabled={initialPagination.page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(initialPagination.page, initialPagination.totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === initialPagination.page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page + 1)}
+          disabled={initialPagination.page === initialPagination.totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
 
   const handleSearch = (value: string) => {
     setSearch(value);
@@ -114,6 +229,54 @@ export default function VouchersListClient({
       params.set("warehouseId", value);
     } else {
       params.delete("warehouseId");
+    }
+    params.set("page", "1");
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
+  };
+
+  const dateFrom = searchParams.get("dateFrom") || "";
+  const dateTo = searchParams.get("dateTo") || "";
+
+  const handleDateFromChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("dateFrom", value);
+    } else {
+      params.delete("dateFrom");
+    }
+    params.set("page", "1");
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
+  };
+
+  const handleDateToChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set("dateTo", value);
+    } else {
+      params.delete("dateTo");
+    }
+    params.set("page", "1");
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
+  };
+
+  const handleTypeChange = (value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value && value !== "all") {
+      params.set("type", value);
+    } else {
+      params.delete("type");
     }
     params.set("page", "1");
     const tab = searchParams.get("tab") || "all";
@@ -176,51 +339,107 @@ export default function VouchersListClient({
 
   return (
     <div className="space-y-4">
-      {/* Search & Warehouse Filter */}
-      <div className="flex flex-col md:flex-row md:items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by voucher number, reference, or description..."
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-10"
-          />
-          {search && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-              onClick={() => handleSearch("")}
+      {/* Search, Type, Date Range & Warehouse Filters */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-center gap-4 flex-1">
+          <div className="relative flex-1 max-w-sm w-full">
+            <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by voucher number, reference, or description..."
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-10"
+            />
+            {search && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => handleSearch("")}
+              >
+                <FiX className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          <div className="w-full sm:w-[160px]">
+            <Select
+              value={selectedType || "all"}
+              onValueChange={handleTypeChange}
             >
-              <FiX className="h-4 w-4" />
-            </Button>
-          )}
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Filter by Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="PAYMENT">Payment</SelectItem>
+                <SelectItem value="RECEIPT">Receipt</SelectItem>
+                <SelectItem value="JOURNAL">Journal</SelectItem>
+                <SelectItem value="CONTRA">Transfer</SelectItem>
+                <SelectItem value="SALES">Sales</SelectItem>
+                <SelectItem value="PURCHASE">Purchase</SelectItem>
+                <SelectItem value="RETURN">Return</SelectItem>
+                <SelectItem value="DAMAGE">Damage</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="w-full sm:w-[200px]">
+            <Select
+              value={selectedWarehouseId || "all"}
+              onValueChange={handleWarehouseChange}
+              disabled={!isAdmin}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Filter by Warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                {isAdmin && (
+                  <SelectItem value="all">All Warehouses</SelectItem>
+                )}
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name} ({w.code})
+                  </SelectItem>
+                ))}
+                {!isAdmin && warehouses.length === 0 && (
+                  <SelectItem value="none">No Warehouse Assigned</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="w-full md:w-[220px]">
-          <Select
-            value={selectedWarehouseId || "all"}
-            onValueChange={handleWarehouseChange}
-            disabled={!isAdmin}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Filter by Warehouse" />
-            </SelectTrigger>
-            <SelectContent>
-              {isAdmin && (
-                <SelectItem value="all">All Warehouses</SelectItem>
-              )}
-              {warehouses.map((w) => (
-                <SelectItem key={w.id} value={w.id}>
-                  {w.name} ({w.code})
-                </SelectItem>
-              ))}
-              {!isAdmin && warehouses.length === 0 && (
-                <SelectItem value="none">No Warehouse Assigned</SelectItem>
-              )}
-            </SelectContent>
-          </Select>
+        {/* Date Range Inputs */}
+        <div className="flex items-center gap-2 w-full xl:w-auto">
+          <Input
+            type="date"
+            placeholder="From Date"
+            value={dateFrom}
+            onChange={(e) => handleDateFromChange(e.target.value)}
+            className="w-[140px] text-xs h-9"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input
+            type="date"
+            placeholder="To Date"
+            value={dateTo}
+            onChange={(e) => handleDateToChange(e.target.value)}
+            className="w-[140px] text-xs h-9"
+          />
+          {(dateFrom || dateTo) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 px-2 text-xs"
+              onClick={() => {
+                handleDateFromChange("");
+                handleDateToChange("");
+              }}
+            >
+              Clear Dates
+            </Button>
+          )}
         </div>
       </div>
 
@@ -232,6 +451,7 @@ export default function VouchersListClient({
               <TableHead>Voucher Number</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Type</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
               <TableHead>Reference</TableHead>
               <TableHead>Client/Supplier</TableHead>
               <TableHead>Status</TableHead>
@@ -242,12 +462,17 @@ export default function VouchersListClient({
           <TableBody>
             {initialVouchers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                   No vouchers found
                 </TableCell>
               </TableRow>
             ) : (
               initialVouchers.map((voucher) => {
+                const amount = voucher.totalAmount ?? (
+                  voucher.voucherLines && voucher.voucherLines.length > 0
+                    ? voucher.voucherLines.reduce((sum, l) => sum + Number(l.debitAmount || 0), 0)
+                    : 0
+                );
                 return (
                   <TableRow key={voucher.id}>
                     <TableCell className="font-medium">
@@ -260,6 +485,9 @@ export default function VouchersListClient({
                       <Badge className={getTypeColor(voucher.type)}>
                         {voucher.type}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {voucher.reference || "-"}
@@ -309,39 +537,17 @@ export default function VouchersListClient({
       </div>
 
       {/* Pagination */}
-      {initialPagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
-            {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
-            {initialPagination.total} vouchers
+      {(initialPagination.totalPages > 1 || initialPagination.total > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
+              {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
+              {initialPagination.total} vouchers
+            </div>
+            {renderLimitSelector()}
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === 1 || isPending}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page - 1));
-                router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
-              }}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page >= initialPagination.totalPages || isPending}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page + 1));
-                router.push(`/dashboard/accounts/vouchers?${params.toString()}`);
-              }}
-            >
-              Next
-            </Button>
-          </div>
+          {renderPaginationButtons()}
         </div>
       )}
     </div>

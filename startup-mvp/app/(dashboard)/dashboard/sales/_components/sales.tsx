@@ -66,6 +66,7 @@ interface Sale {
   orderType: OrderType;
   grandTotal: number;
   isTrash: boolean;
+  paymentDetails?: any;
   client: {
     id: string;
     name: string | null;
@@ -89,6 +90,36 @@ interface Sale {
     items: number;
   };
 }
+
+const getPaymentStatus = (sale: Sale) => {
+  const grandTotal = Number(sale.grandTotal || 0);
+  const paymentDetails = sale.paymentDetails as any;
+
+  let initialPaid = 0;
+  let dueCollectionsPaid = 0;
+
+  if (paymentDetails) {
+    initialPaid = Number(paymentDetails.cashAmount || 0) + Number(paymentDetails.cardAmount || 0) + Number(paymentDetails.mfsAmount || 0) - Number(paymentDetails.changeAmount || 0);
+    if (Array.isArray(paymentDetails.dueCollections)) {
+      for (const col of paymentDetails.dueCollections) {
+        dueCollectionsPaid += Number(col.cashAmount || 0) + Number(col.cardAmount || 0) + Number(col.mfsAmount || 0);
+      }
+    }
+  } else {
+    initialPaid = sale.status === "COMPLETED" ? grandTotal : 0;
+  }
+
+  const netPaid = initialPaid + dueCollectionsPaid;
+  const remainingDue = Number((grandTotal - netPaid).toFixed(2));
+
+  if (remainingDue <= 0.01 || netPaid >= grandTotal - 0.01) {
+    return { label: "Paid", variant: "emerald" as const };
+  } else if (netPaid <= 0.01 || initialPaid <= 0) {
+    return { label: "Due", variant: "rose" as const };
+  } else {
+    return { label: "Partial Paid", variant: "amber" as const };
+  }
+};
 
 interface Pagination {
   page: number;
@@ -211,6 +242,122 @@ export default function SalesListClient({
     router.push(`/dashboard/sales?${params.toString()}`);
   };
 
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", newPage.toString());
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/sales?${params.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("limit", newLimit.toString());
+    params.set("page", "1");
+    const tab = searchParams.get("tab") || "all";
+    if (tab) {
+      params.set("tab", tab);
+    }
+    router.push(`/dashboard/sales?${params.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(initialPagination.limit)}
+          onValueChange={(val) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(initialPagination.limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    if (initialPagination.totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page - 1)}
+          disabled={initialPagination.page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(initialPagination.page, initialPagination.totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === initialPagination.page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(initialPagination.page + 1)}
+          disabled={initialPagination.page === initialPagination.totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
+
   const handleSearch = (value: string) => {
     setSearch(value);
     const params = new URLSearchParams(searchParams.toString());
@@ -309,7 +456,17 @@ export default function SalesListClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-4 mb-6 bg-muted/20 p-4 rounded-lg border border-border/50">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Reduce table padding and font size for clean print layout */
+          .print-bordered th,
+          .print-bordered td {
+            padding: 4px 6px !important;
+            font-size: 8.5pt !important;
+          }
+        }
+      `}} />
+      <div className="flex flex-col gap-4 mb-6 bg-muted/20 p-4 rounded-lg border border-border/50 print:hidden">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -514,33 +671,34 @@ export default function SalesListClient({
     </div>
 
       <div className="border rounded-lg">
-        <Table>
+        <Table className="print-bordered">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12">
+              <TableHead className="w-12 print:hidden">
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={(checked) => handleSelectAll(!!checked)}
                   aria-label="Select all"
                 />
               </TableHead>
-              <TableHead>Sale #</TableHead>
-              <TableHead>Client</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead>Biller</TableHead>
-              <TableHead>Assistant</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead className="text-right">Items</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Sale #</TableHead>
+              <TableHead className="print:w-[20%] whitespace-nowrap">Client</TableHead>
+              <TableHead className="print:w-[10%] whitespace-nowrap">Status</TableHead>
+              <TableHead className="print:w-[10%] whitespace-nowrap">Payment</TableHead>
+              <TableHead className="print:w-[10%] whitespace-nowrap">Type</TableHead>
+              <TableHead className="print:hidden">Warehouse</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Biller</TableHead>
+              <TableHead className="print:hidden">Assistant</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Date</TableHead>
+              <TableHead className="text-right print:w-[5%] whitespace-nowrap">Items</TableHead>
+              <TableHead className="text-right print:w-[10%] whitespace-nowrap">Total</TableHead>
+              <TableHead className="text-right print:hidden">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {initialSales.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                   {isTrash ? "No trashed sales found" : "No sales found"}
                 </TableCell>
               </TableRow>
@@ -550,7 +708,7 @@ export default function SalesListClient({
 
                 return (
                   <TableRow key={sale.id} className={cn(isSelected && "bg-muted/50")}>
-                    <TableCell>
+                    <TableCell className="print:hidden">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) =>
@@ -559,11 +717,11 @@ export default function SalesListClient({
                         aria-label={`Select ${sale.saleNumber}`}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium print:text-black print:whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         {sale.saleNumber}
                         <button 
-                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          className="text-muted-foreground hover:text-foreground transition-colors print:hidden"
                           onClick={async (e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -580,10 +738,10 @@ export default function SalesListClient({
                         </button>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground print:text-black print:whitespace-nowrap">
                       {sale.client.name || sale.client.email}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:whitespace-nowrap print:text-black">
                       <Badge
                         variant={
                           sale.status === "CANCELLED"
@@ -592,11 +750,33 @@ export default function SalesListClient({
                             ? "default"
                             : "secondary"
                         }
+                        className="print:hidden"
                       >
                         {STATUS_LABELS[sale.status]}
                       </Badge>
+                      <span className="hidden print:inline text-black">{STATUS_LABELS[sale.status]}</span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:whitespace-nowrap print:text-black">
+                      {(() => {
+                        const payStat = getPaymentStatus(sale);
+                        return (
+                          <>
+                            <Badge
+                              className={cn(
+                                "print:hidden font-semibold border text-xs px-2 py-0.5",
+                                payStat.variant === "emerald" && "border-emerald-500/30 text-emerald-600 bg-emerald-500/10",
+                                payStat.variant === "amber" && "border-amber-500/30 text-amber-600 bg-amber-500/10",
+                                payStat.variant === "rose" && "border-rose-500/30 text-rose-600 bg-rose-500/10"
+                              )}
+                            >
+                              {payStat.label}
+                            </Badge>
+                            <span className="hidden print:inline text-black">{payStat.label}</span>
+                          </>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="print:whitespace-nowrap print:text-black">
                       <Badge
                         variant={
                           sale.orderType === "RETURN"
@@ -606,32 +786,34 @@ export default function SalesListClient({
                             : "secondary"
                         }
                         className={cn(
+                          "print:hidden",
                           sale.orderType === "WHOLESALE" && "border-amber-500/30 text-amber-600 bg-amber-500/5",
                           sale.orderType === "RETAIL" && "border-blue-500/30 text-blue-600 bg-blue-500/5"
                         )}
                       >
                         {sale.orderType}
                       </Badge>
+                      <span className="hidden print:inline text-black">{sale.orderType}</span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="print:hidden">
                       {sale.warehouse?.name || "N/A"}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground print:text-black print:whitespace-nowrap">
                       {sale.createdByUser?.name || "System"}
                     </TableCell>
-                    <TableCell className="text-muted-foreground font-medium">
+                    <TableCell className="print:hidden">
                       {sale.salesAssistant?.name || "-"}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground print:text-black print:whitespace-nowrap">
                       {format(new Date(sale.date), "MMM d, yyyy")}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-muted-foreground">
+                    <TableCell className="text-right font-mono text-muted-foreground print:text-black print:whitespace-nowrap">
                       {sale._count?.items ?? 0}
                     </TableCell>
-                    <TableCell className="text-right font-medium">
-                      ৳{sale.grandTotal.toFixed(2)}
+                    <TableCell className="text-right font-medium print:text-black print:whitespace-nowrap print:font-bold">
+                      <span className="print:hidden">৳</span>{sale.grandTotal.toFixed(2)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right print:hidden">
                       <div className="flex items-center justify-end gap-2">
                         {!isTrash && (
                           <>
@@ -675,47 +857,17 @@ export default function SalesListClient({
         </Table>
       </div>
 
-      {initialPagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
-            {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
-            {initialPagination.total} sales
+      {(initialPagination.totalPages > 1 || initialPagination.total > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 print:hidden">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {((initialPagination.page - 1) * initialPagination.limit) + 1} to{" "}
+              {Math.min(initialPagination.page * initialPagination.limit, initialPagination.total)} of{" "}
+              {initialPagination.total} sales
+            </div>
+            {renderLimitSelector()}
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === 1}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page - 1));
-                const tab = searchParams.get("tab") || "all";
-                if (tab) {
-                  params.set("tab", tab);
-                }
-                router.push(`/dashboard/sales?${params.toString()}`);
-              }}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={initialPagination.page === initialPagination.totalPages}
-              onClick={() => {
-                const params = new URLSearchParams(searchParams.toString());
-                params.set("page", String(initialPagination.page + 1));
-                const tab = searchParams.get("tab") || "all";
-                if (tab) {
-                  params.set("tab", tab);
-                }
-                router.push(`/dashboard/sales?${params.toString()}`);
-              }}
-            >
-              Next
-            </Button>
-          </div>
+          {renderPaginationButtons()}
         </div>
       )}
 

@@ -12,7 +12,6 @@ export async function getEmployeesForExport(filters: {
   employeeTypeId?: string;
   gender?: string;
   departmentId?: string;
-  designation?: string;
 }) {
   try {
     const session = await auth();
@@ -25,62 +24,41 @@ export async function getEmployeesForExport(filters: {
       return { success: false, error: "Permission denied" };
     }
 
-    const conditions: Prisma.EmployeeWhereInput[] = [];
+    const where: Prisma.EmployeeWhereInput = {};
 
     if (filters.search) {
-      conditions.push({
-        OR: [
-          { name: { contains: filters.search, mode: "insensitive" } },
-          { employeeCode: { contains: filters.search, mode: "insensitive" } },
-          { email: { contains: filters.search, mode: "insensitive" } },
-          { phone: { contains: filters.search, mode: "insensitive" } },
-          {
-            deviceMappings: {
-              some: {
-                deviceUserId: { contains: filters.search, mode: "insensitive" }
-              }
+      where.OR = [
+        { name: { contains: filters.search, mode: "insensitive" } },
+        { employeeCode: { contains: filters.search, mode: "insensitive" } },
+        { email: { contains: filters.search, mode: "insensitive" } },
+        { phone: { contains: filters.search, mode: "insensitive" } },
+        {
+          deviceMappings: {
+            some: {
+              deviceUserId: { contains: filters.search, mode: "insensitive" }
             }
           }
-        ]
-      });
+        }
+      ];
     }
 
     if (filters.status && filters.status !== "all" && filters.status !== "all-status") {
-      conditions.push({ status: filters.status });
+      where.status = filters.status;
     } else {
-      conditions.push({ status: { not: "trash" } });
+      where.status = { not: "trash" };
     }
 
     if (filters.employeeTypeId && filters.employeeTypeId !== "all") {
-      conditions.push({ employeeTypeId: filters.employeeTypeId });
+      where.employeeTypeId = filters.employeeTypeId;
     }
 
     if (filters.gender && filters.gender !== "all") {
-      conditions.push({ gender: filters.gender });
-    }
-
-    if (filters.designation && filters.designation !== "all") {
-      conditions.push({ designation: filters.designation });
+      where.gender = filters.gender;
     }
 
     if (filters.departmentId && filters.departmentId !== "all") {
-      const dept = await prisma.department.findUnique({
-        where: { id: filters.departmentId },
-        select: { name: true }
-      });
-      if (dept) {
-        conditions.push({
-          OR: [
-            { departmentId: filters.departmentId },
-            { department: { equals: dept.name, mode: "insensitive" } }
-          ]
-        });
-      } else {
-        conditions.push({ departmentId: filters.departmentId });
-      }
+      where.departmentId = filters.departmentId;
     }
-
-    const where: Prisma.EmployeeWhereInput = conditions.length > 0 ? { AND: conditions } : {};
 
     const employees = await prisma.employee.findMany({
       where,
@@ -123,7 +101,6 @@ export async function getAttendancesForExport(filters: {
   employeeTypeId?: string;
   departmentId?: string;
   search?: string;
-  designation?: string;
 }) {
   try {
     const session = await auth();
@@ -142,43 +119,22 @@ export async function getAttendancesForExport(filters: {
     end.setHours(23, 59, 59, 999);
 
     // Find matching employee IDs based on type/dept/search
-    const empConditions: Prisma.EmployeeWhereInput[] = [];
+    const empWhere: Prisma.EmployeeWhereInput = {};
     
     if (filters.search) {
-      empConditions.push({
-        OR: [
-          { name: { contains: filters.search, mode: "insensitive" } },
-          { employeeCode: { contains: filters.search, mode: "insensitive" } }
-        ]
-      });
+      empWhere.OR = [
+        { name: { contains: filters.search, mode: "insensitive" } },
+        { employeeCode: { contains: filters.search, mode: "insensitive" } }
+      ];
     }
 
     if (filters.employeeTypeId && filters.employeeTypeId !== "all") {
-      empConditions.push({ employeeTypeId: filters.employeeTypeId });
-    }
-
-    if (filters.designation && filters.designation !== "all") {
-      empConditions.push({ designation: filters.designation });
+      empWhere.employeeTypeId = filters.employeeTypeId;
     }
 
     if (filters.departmentId && filters.departmentId !== "all") {
-      const dept = await prisma.department.findUnique({
-        where: { id: filters.departmentId },
-        select: { name: true }
-      });
-      if (dept) {
-        empConditions.push({
-          OR: [
-            { departmentId: filters.departmentId },
-            { department: { equals: dept.name, mode: "insensitive" } }
-          ]
-        });
-      } else {
-        empConditions.push({ departmentId: filters.departmentId });
-      }
+      empWhere.departmentId = filters.departmentId;
     }
-
-    const empWhere: Prisma.EmployeeWhereInput = empConditions.length > 0 ? { AND: empConditions } : {};
 
     const matchingEmployees = await prisma.employee.findMany({
       where: empWhere,

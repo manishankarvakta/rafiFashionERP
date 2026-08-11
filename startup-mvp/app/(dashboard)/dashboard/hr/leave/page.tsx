@@ -6,6 +6,7 @@ import Link from "next/link";
 import { FiPlus } from "react-icons/fi";
 import LeaveApplicationsListClient from "./_components/leave-applications-list";
 import LeaveFormPrintButton from "./_components/leave-form-print-button";
+import ExportLeaveButton from "./_components/ExportLeaveButton";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
 import { LeaveStatus } from "@prisma/client";
@@ -15,12 +16,14 @@ interface LeavePageProps {
     page?: string;
     search?: string;
     status?: string;
+    limit?: string;
   }>;
 }
 
 export default async function LeavePage({ searchParams }: LeavePageProps) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
+  const limit = parseInt(params.limit || "20");
   const search = params.search || "";
   const statusParam = params.status || "ALL";
 
@@ -28,7 +31,7 @@ export default async function LeavePage({ searchParams }: LeavePageProps) {
   const userId = session?.user?.id;
 
   const [result, canView, canEdit] = await Promise.all([
-    getLeaveApplications(page, 10, search, statusParam as any),
+    getLeaveApplications(page, limit, search, statusParam as any),
     userId ? hasPermission(userId, "hr.leave", "view") : false,
     userId ? hasPermission(userId, "hr.leave", "edit") : false,
   ]);
@@ -63,6 +66,7 @@ export default async function LeavePage({ searchParams }: LeavePageProps) {
               </Link>
             </Button>
           )}
+          <ExportLeaveButton search={search} status={statusParam} />
           <LeaveFormPrintButton />
           <Button asChild>
             <Link href="/dashboard/hr/leave/apply">
@@ -95,7 +99,7 @@ export default async function LeavePage({ searchParams }: LeavePageProps) {
         <TabsContent value={statusParam} className="mt-4">
           <LeaveApplicationsListClient
             initialApplications={(result.leaveApplications as any) || []}
-            initialPagination={result.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }}
+            initialPagination={result.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 }}
             initialSearch={search}
             userId={userId}
             permissions={{

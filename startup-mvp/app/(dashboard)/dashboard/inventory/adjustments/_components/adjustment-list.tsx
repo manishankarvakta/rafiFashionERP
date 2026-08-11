@@ -43,6 +43,7 @@ import {
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { exportToCSV } from "@/lib/utils/export-csv";
+import ExportAdjustmentsButton from "./ExportAdjustmentsButton";
 import Link from "next/link";
 import type { InventoryAdjustmentStatus } from "@prisma/client";
 
@@ -72,6 +73,118 @@ export default function AdjustmentList({
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const [approveId, setApproveId] = React.useState<string | null>(null);
   const { toast } = useToast();
+  const [isPending, startTransition] = React.useTransition();
+
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (page: number) => {
+    const newParams = new URLSearchParams(params.toString());
+    newParams.set("page", page.toString());
+    router.push(`?${newParams.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const newParams = new URLSearchParams(params.toString());
+    newParams.set("limit", newLimit.toString());
+    newParams.set("page", "1");
+    router.push(`?${newParams.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    const limit = pagination?.limit ?? 20;
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(limit)}
+          onValueChange={(val: string) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    const totalPages = pagination?.totalPages ?? 0;
+    const page = pagination?.page ?? 1;
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(page - 1)}
+          disabled={page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(page, totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(page + 1)}
+          disabled={page === totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
 
   const [warehouseId, setWarehouseId] = React.useState(selectedWarehouseId);
   const [startDateVal, setStartDateVal] = React.useState(startDate);
@@ -183,7 +296,17 @@ export default function AdjustmentList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Reduce table padding and font size for clean print layout */
+          .print-bordered th,
+          .print-bordered td {
+            padding: 4px 6px !important;
+            font-size: 8.5pt !important;
+          }
+        }
+      `}} />
+      <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
         <form onSubmit={handleSearch} className="flex flex-wrap items-center gap-4 flex-1">
           <div className="relative flex-1 min-w-[240px] max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -240,17 +363,17 @@ export default function AdjustmentList({
       </div>
 
       <div className="rounded-md border">
-        <Table>
+        <Table className="print-bordered">
           <TableHeader>
             <TableRow>
-              <TableHead>Number</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Warehouse</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Items</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Created By</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Number</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Date</TableHead>
+              <TableHead className="print:w-[20%] whitespace-nowrap">Warehouse</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Status</TableHead>
+              <TableHead className="print:w-[10%] whitespace-nowrap">Items</TableHead>
+              <TableHead className="text-right print:w-[12.5%] whitespace-nowrap">Amount</TableHead>
+              <TableHead className="print:w-[12.5%] whitespace-nowrap">Created By</TableHead>
+              <TableHead className="text-right print:hidden">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -263,23 +386,27 @@ export default function AdjustmentList({
             ) : (
               adjustments.map((adj) => (
                 <TableRow key={adj.id}>
-                  <TableCell className="font-medium">{adj.adjustmentNumber}</TableCell>
-                  <TableCell>{format(new Date(adj.date), "dd MMM yyyy")}</TableCell>
-                  <TableCell>{adj.warehouse?.name}</TableCell>
-                  <TableCell>
-                    <Badge variant={
-                      adj.status === "COMPLETED" ? "default" : 
-                      adj.status === "DRAFT" ? "secondary" : "destructive"
-                    }>
+                  <TableCell className="font-medium print:text-black print:whitespace-nowrap">{adj.adjustmentNumber}</TableCell>
+                  <TableCell className="print:text-black print:whitespace-nowrap">{format(new Date(adj.date), "dd MMM yyyy")}</TableCell>
+                  <TableCell className="print:text-black print:whitespace-nowrap">{adj.warehouse?.name}</TableCell>
+                  <TableCell className="print:whitespace-nowrap print:text-black">
+                    <Badge 
+                      variant={
+                        adj.status === "COMPLETED" ? "default" : 
+                        adj.status === "DRAFT" ? "secondary" : "destructive"
+                      }
+                      className="print:hidden"
+                    >
                       {adj.status}
                     </Badge>
+                    <span className="hidden print:inline text-black">{adj.status}</span>
                   </TableCell>
-                  <TableCell>{adj._count.items}</TableCell>
-                  <TableCell className="text-right font-medium">
-                    ৳{Number(adj.grandTotal || 0).toLocaleString()}
+                  <TableCell className="print:text-black print:whitespace-nowrap">{adj._count.items}</TableCell>
+                  <TableCell className="text-right font-medium print:text-black print:whitespace-nowrap print:font-bold">
+                    <span className="print:hidden">৳</span>{Number(adj.grandTotal || 0).toLocaleString()}
                   </TableCell>
-                  <TableCell>{adj.createdByUser?.name}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="print:text-black print:whitespace-nowrap">{adj.createdByUser?.name}</TableCell>
+                  <TableCell className="text-right print:hidden">
                     <div className="flex justify-end gap-2">
                        {/* View/Edit logic could be added here */}
                             <Button 
@@ -324,37 +451,18 @@ export default function AdjustmentList({
         </Table>
       </div>
 
-      {pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Page {pagination.page} of {pagination.totalPages}
+      {/* Pagination controls */}
+      {pagination && ((pagination.totalPages ?? 0) > 1 || (pagination.total ?? 0) > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 print:hidden">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {(((pagination.page ?? 1) - 1) * (pagination.limit ?? 20)) + 1} to{" "}
+              {Math.min((pagination.page ?? 1) * (pagination.limit ?? 20), pagination.total ?? 0)} of{" "}
+              {pagination.total ?? 0} adjustments
+            </div>
+            {renderLimitSelector()}
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const newParams = new URLSearchParams(params.toString());
-                newParams.set("page", String(Math.max(1, pagination.page - 1)));
-                router.push(`?${newParams.toString()}`);
-              }}
-              disabled={pagination.page === 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const newParams = new URLSearchParams(params.toString());
-                newParams.set("page", String(Math.min(pagination.totalPages, pagination.page + 1)));
-                router.push(`?${newParams.toString()}`);
-              }}
-              disabled={pagination.page === pagination.totalPages}
-            >
-              Next
-            </Button>
-          </div>
+          {renderPaginationButtons()}
         </div>
       )}
 
@@ -487,22 +595,7 @@ export function AdjustmentsHeaderActions({
 
   return (
     <div className="flex items-center gap-2">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={handleExportCSV}>
-            Export to CSV
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleExportPDF}>
-            Export to PDF
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <ExportAdjustmentsButton />
 
       {canCreate && (
         <Button asChild>

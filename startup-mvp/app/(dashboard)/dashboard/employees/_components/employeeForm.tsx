@@ -22,9 +22,11 @@ import { getWarehouses } from "../../master/warehouses/_actions/warehouse.action
 import { getShifts } from "../../hr/shifts/_actions/shift.action";
 import { getEmployeeTypes } from "../types/_actions/employee-type.action";
 import { getDepartments } from "../departments/_actions/department.action";
-import { getProductionLines } from "../_actions/production-line.action";
-import ProductionLineDialog from "./production-line-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { getDesignations } from "../designations/_actions/designation.action";
+import { getFloors } from "../floors/_actions/floor.action";
+import { getLines } from "../lines/_actions/line.action";
+import { getAllEmployeeSkills } from "../_actions/employee.action";
+import { TagInput } from "@/components/ui/tag-input";
 import { getBasePathFromPathname } from "@/lib/route-utils-client";
 import { useEffect } from "react";
 import MediaSelector from "@/components/MediaSelector";
@@ -39,8 +41,12 @@ const employeeFormSchema = z.object({
   phone: z.string().min(1, "Phone is required"),
   status: z.enum(["active", "inactive"]),
   designation: z.string().optional().or(z.literal("")),
+  designationId: z.string().optional().or(z.literal("")),
   department: z.string().optional().or(z.literal("")),
   departmentId: z.string().optional().or(z.literal("")),
+  floorId: z.string().optional().or(z.literal("")),
+  lineId: z.string().optional().or(z.literal("")),
+  skills: z.array(z.string()).optional(),
   salary: z.coerce.number().optional().or(z.literal(0)),
   joiningDate: z.string().optional().or(z.literal("")),
   gender: z.string().optional().or(z.literal("")),
@@ -71,8 +77,7 @@ const employeeFormSchema = z.object({
   warehouseId: z.string().optional().or(z.literal("")),
   photo: z.string().optional().or(z.literal("")),
   shiftId: z.string().optional().or(z.literal("")),
-  skills: z.array(z.string()).optional(),
-  productionLineId: z.string().optional().or(z.literal("")),
+
 });
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
@@ -106,12 +111,17 @@ interface EmployeeFormProps {
     warehouseId: string | null;
     photo: string | null;
     shiftId: string | null;
-    skills?: string[];
-    productionLineId?: string | null;
     type?: string | null;
     employeeTypeId?: string | null;
     departmentId?: string | null;
     departmentRelation?: any;
+    designationId?: string | null;
+    designationRelation?: any;
+    floorId?: string | null;
+    floorRelation?: any;
+    lineId?: string | null;
+    lineRelation?: any;
+    skills?: any;
     salaryPayableAccount: {
       id: string;
       code: string;
@@ -135,9 +145,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
   const { toast } = useToast();
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [skillInput, setSkillInput] = useState("");
-  const [productionLines, setProductionLines] = useState<any[]>([]);
-  const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
 
   const {
     register,
@@ -152,10 +159,14 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
           name: initialData.name || "",
           email: initialData.email || "",
           phone: initialData.phone || "",
-          status: (initialData.status === "trash" ? "active" : initialData.status) as "active" | "inactive",
+          status: (initialData.status as "active" | "inactive") || "active",
           designation: initialData.designation || "",
+          designationId: initialData.designationId || "",
           department: initialData.department || "",
           departmentId: initialData.departmentId || "",
+          floorId: initialData.floorId || "",
+          lineId: initialData.lineId || "",
+          skills: Array.isArray(initialData.skills) ? initialData.skills : [],
           salary: initialData.salary ? Number(initialData.salary) : 0,
           joiningDate: initialData.joiningDate ? new Date(initialData.joiningDate).toISOString().split("T")[0] : "",
           gender: initialData.gender || "",
@@ -183,8 +194,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
           warehouseId: initialData.warehouseId || "",
           photo: initialData.photo || "",
           shiftId: initialData.shiftId || "",
-          skills: initialData.skills || [],
-          productionLineId: initialData.productionLineId || "",
           type: initialData.type || "",
           employeeTypeId: initialData.employeeTypeId || "",
           biometricDeviceId: (initialData as any).biometricDeviceId || "",
@@ -195,8 +204,12 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
           phone: "",
           status: "active",
           designation: "",
+          designationId: "",
           department: "",
           departmentId: "",
+          floorId: "",
+          lineId: "",
+          skills: [],
           salary: 0,
           joiningDate: "",
           gender: "",
@@ -224,8 +237,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
           warehouseId: "",
           photo: "",
           shiftId: "",
-          skills: [],
-          productionLineId: "",
           type: "",
           employeeTypeId: "",
           biometricDeviceId: "",
@@ -236,6 +247,10 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
   const [shifts, setShifts] = useState<any[]>([]);
   const [employeeTypes, setEmployeeTypes] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [designations, setDesignations] = useState<any[]>([]);
+  const [floors, setFloors] = useState<any[]>([]);
+  const [lines, setLines] = useState<any[]>([]);
+  const [allSkills, setAllSkills] = useState<string[]>([]);
 
   useEffect(() => {
     async function fetchData() {
@@ -279,10 +294,33 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
         }
       }
 
-      const lineResult = await getProductionLines();
-      if (lineResult.success && lineResult.lines) {
-        setProductionLines(lineResult.lines);
+      const desigResult = await getDesignations(1, 100, "", "active");
+      if (desigResult.success && desigResult.designations) {
+        setDesignations(desigResult.designations);
+        
+        // Auto-match legacy designation string to designationId if not set
+        if (initialData && !initialData.designationId && initialData.designation) {
+          const matchedDesig = desigResult.designations.find(
+            (d: any) => d.name.toLowerCase() === initialData.designation?.toLowerCase()
+          );
+          if (matchedDesig) {
+            setValue("designationId", matchedDesig.id);
+          }
+        }
       }
+
+      const floorRes = await getFloors(1, 100, "", "active");
+      if (floorRes.success && floorRes.floors) {
+        setFloors(floorRes.floors);
+      }
+
+      const lineRes = await getLines(1, 100, "", "active");
+      if (lineRes.success && lineRes.lines) {
+        setLines(lineRes.lines);
+      }
+
+      const skillsList = await getAllEmployeeSkills();
+      setAllSkills(skillsList);
     }
     fetchData();
   }, [initialData]);
@@ -346,20 +384,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
 
   const nomineePhotos = watch("nominee.photos") || [];
   const [isNomineePhotoDialogOpen, setIsNomineePhotoDialogOpen] = useState(false);
-  const skills = watch("skills") || [];
-
-  const handleAddSkill = (e: React.MouseEvent | React.KeyboardEvent) => {
-    e.preventDefault();
-    const trimmed = skillInput.trim();
-    if (trimmed && !skills.includes(trimmed)) {
-      setValue("skills", [...skills, trimmed]);
-    }
-    setSkillInput("");
-  };
-
-  const handleRemoveSkill = (skillToRemove: string) => {
-    setValue("skills", skills.filter((s) => s !== skillToRemove));
-  };
 
   const handleNomineePhotoSelect = (url: string) => {
     setValue("nominee.photos", [...nomineePhotos, url]);
@@ -562,12 +586,16 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="designation">Designation</Label>
-                      <Input
-                        id="designation"
-                        placeholder="Software Engineer"
-                        {...register("designation")}
+                      <Label htmlFor="designationId">Designation</Label>
+                      <SearchableSelect
+                        value={watch("designationId")}
+                        onValueChange={(value) => setValue("designationId", value || "")}
                         disabled={loading}
+                        placeholder="Select designation"
+                        options={designations.map((d) => ({
+                          value: d.id,
+                          label: d.name
+                        }))}
                       />
                     </div>
 
@@ -583,53 +611,6 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
                           label: d.name
                         }))}
                       />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="productionLineId">Production Line</Label>
-                        <Dialog open={isLineDialogOpen} onOpenChange={setIsLineDialogOpen}>
-                          <DialogTrigger asChild>
-                            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs text-blue-600 hover:text-blue-700">
-                              + Add Line
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-[425px]">
-                            <DialogHeader>
-                              <DialogTitle>Create New Production Line</DialogTitle>
-                              <DialogDescription>
-                                Add a new production line. It will be available instantly.
-                              </DialogDescription>
-                            </DialogHeader>
-                            <ProductionLineDialog
-                              onCancel={() => setIsLineDialogOpen(false)}
-                              onCreated={(newLine) => {
-                                setProductionLines((prev) => [newLine, ...prev]);
-                                setValue("productionLineId", newLine.id);
-                                setIsLineDialogOpen(false);
-                              }}
-                            />
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                      <Select
-                        defaultValue={watch("productionLineId") || ""}
-                        value={watch("productionLineId") || ""}
-                        onValueChange={(value) => setValue("productionLineId", value)}
-                        disabled={loading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Production Line" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None (Not Assigned)</SelectItem>
-                          {productionLines.map((line) => (
-                            <SelectItem key={line.id} value={line.id}>
-                              {line.name} ({line.code})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </div>
 
                     <div className="space-y-2">
@@ -730,61 +711,56 @@ export default function EmployeeForm({ mode, initialData }: EmployeeFormProps) {
                         disabled={loading}
                       />
                     </div>
-                  </div>
-                </div>
 
-                {/* Skills & Qualifications */}
-                <div className="space-y-4 pt-4">
-                  <div className="flex items-center gap-2 border-b pb-2">
-                    <FiBriefcase className="text-primary" />
-                    <h3 className="font-semibold">Skills & Qualifications</h3>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="flex gap-2 max-w-md">
-                      <Input
-                        type="text"
-                        placeholder="Type a skill (e.g. belt join, belt topsin) and press Add"
-                        value={skillInput}
-                        onChange={(e) => setSkillInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            handleAddSkill(e);
+                    {/* New Fields added after Biometric Device ID */}
+                    <div className="space-y-2">
+                      <Label htmlFor="floorId">Floor (Dynamic)</Label>
+                      <SearchableSelect
+                        value={watch("floorId")}
+                        onValueChange={(value) => {
+                          setValue("floorId", value || "");
+                          const currentLineId = watch("lineId");
+                          if (currentLineId) {
+                            const currentLine = lines.find((l) => l.id === currentLineId);
+                            if (currentLine && currentLine.floorId && currentLine.floorId !== value) {
+                              setValue("lineId", "");
+                            }
                           }
                         }}
                         disabled={loading}
+                        placeholder="Select floor"
+                        options={floors.map((f) => ({
+                          value: f.id,
+                          label: f.name
+                        }))}
                       />
-                      <Button
-                        type="button"
-                        onClick={handleAddSkill}
-                        disabled={loading}
-                      >
-                        Add
-                      </Button>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {skills.map((skill) => (
-                        <span
-                          key={skill}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary border border-primary/20"
-                        >
-                          {skill}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveSkill(skill)}
-                            className="rounded-full hover:bg-primary/20 p-0.5"
-                            disabled={loading}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                      {skills.length === 0 && (
-                        <p className="text-sm text-muted-foreground italic">
-                          No skills added yet. Add skills to define employee capabilities.
-                        </p>
-                      )}
+                    <div className="space-y-2">
+                      <Label htmlFor="lineId">Line (Dynamic)</Label>
+                      <SearchableSelect
+                        value={watch("lineId")}
+                        onValueChange={(value) => setValue("lineId", value || "")}
+                        disabled={loading}
+                        placeholder="Select line"
+                        options={lines
+                          .filter((l) => !watch("floorId") || !l.floorId || l.floorId === watch("floorId"))
+                          .map((l) => ({
+                            value: l.id,
+                            label: l.floor?.name ? `${l.name} (${l.floor.name})` : l.name
+                          }))}
+                      />
+                    </div>
+
+                    <div className="space-y-2 md:col-span-3">
+                      <Label htmlFor="skills">Employee Skills (Autofills as Tags)</Label>
+                      <TagInput
+                        value={watch("skills") || []}
+                        onChange={(val) => setValue("skills", val)}
+                        suggestions={allSkills}
+                        placeholder="Type a skill (e.g., Sewing, Quality Control) and press Enter..."
+                        disabled={loading}
+                      />
                     </div>
                   </div>
                 </div>

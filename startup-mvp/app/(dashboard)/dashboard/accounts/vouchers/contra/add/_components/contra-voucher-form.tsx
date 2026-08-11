@@ -56,7 +56,8 @@ export default function ContraVoucherForm() {
     cash: ContraAccountOption[];
     bank: ContraAccountOption[];
     digitalWallet: ContraAccountOption[];
-  }>({ cash: [], bank: [], digitalWallet: [] });
+    other: ContraAccountOption[];
+  }>({ cash: [], bank: [], digitalWallet: [], other: [] });
   const [loadingData, setLoadingData] = useState(true);
   
   // Balance states
@@ -115,6 +116,7 @@ export default function ContraVoucherForm() {
       ...contraAccounts.cash,
       ...contraAccounts.bank,
       ...contraAccounts.digitalWallet,
+      ...(contraAccounts.other || []),
     ];
     return allAccounts.find(a => a.id === id);
   };
@@ -265,8 +267,9 @@ export default function ContraVoucherForm() {
     const cashAccounts = filterList(contraAccounts.cash);
     const bankAccounts = filterList(contraAccounts.bank);
     const walletAccounts = filterList(contraAccounts.digitalWallet);
+    const otherAccounts = filterList(contraAccounts.other || []);
 
-    const hasAccounts = cashAccounts.length > 0 || bankAccounts.length > 0 || walletAccounts.length > 0;
+    const hasAccounts = cashAccounts.length > 0 || bankAccounts.length > 0 || walletAccounts.length > 0 || otherAccounts.length > 0;
 
     return (
       <div className="space-y-2">
@@ -336,6 +339,18 @@ export default function ContraVoucherForm() {
                             DIGITAL WALLETS
                           </div>
                           {walletAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id} className="text-left cursor-pointer py-2 focus:bg-accent">
+                              <span className="text-sm font-medium">{account.code} - {account.name}</span>
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      {otherAccounts.length > 0 && (
+                        <>
+                          <div className="px-2 py-1 text-xs font-semibold text-muted-foreground bg-muted/30 uppercase tracking-wider mt-1">
+                            OTHER ACCOUNTS (EQUITY, CAPITAL, ETC.)
+                          </div>
+                          {otherAccounts.map((account) => (
                             <SelectItem key={account.id} value={account.id} className="text-left cursor-pointer py-2 focus:bg-accent">
                               <span className="text-sm font-medium">{account.code} - {account.name}</span>
                             </SelectItem>

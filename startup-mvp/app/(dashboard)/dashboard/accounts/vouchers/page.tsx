@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
 import VouchersListClient from "./_components/vouchers-list";
 import VoucherQuickCreate from "./_components/voucher-quick-create";
+import ExportVouchersButton from "./_components/ExportVouchersButton";
 import PageGuard from "@/components/permissions/page-guard";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -18,12 +19,14 @@ interface VouchersPageProps {
     dateFrom?: string;
     dateTo?: string;
     warehouseId?: string;
+    limit?: string;
   }>;
 }
 
 export default async function VouchersPage({ searchParams }: VouchersPageProps) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
+  const limit = parseInt(params.limit || "20");
   const search = params.search || "";
   const tab = params.tab || "all";
 
@@ -43,11 +46,11 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
 
   const selectedWarehouseId = isAdmin ? params.warehouseId : userWarehouseId;
 
-  const status = tab === "trash" ? "cancelled" : tab === "draft" ? "draft" : tab === "posted" ? "posted" : "all";
+  const status = tab === "cancelled" || tab === "trash" ? "cancelled" : tab === "draft" ? "draft" : tab === "posted" ? "posted" : "all";
   
   // Check permissions on server side
   const [result, canView, canEdit, canCreate] = await Promise.all([
-    listVouchers(page, 10, search, status, params.type, params.dateFrom, params.dateTo, selectedWarehouseId),
+    listVouchers(page, limit, search, status, params.type, params.dateFrom, params.dateTo, selectedWarehouseId),
     userId ? hasPermission(userId, "accounts.vouchers", "view") : false,
     userId ? hasPermission(userId, "accounts.vouchers", "edit") : false,
     userId ? hasPermission(userId, "accounts.vouchers", "create") : false,
@@ -62,7 +65,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
 
   const warehouses = isAdmin 
     ? allWarehouses 
-    : allWarehouses.filter((w) => w.id === userWarehouseId);
+    : allWarehouses.filter((w: any) => w.id === userWarehouseId);
 
   // Handle errors
   if (!result.success) {
@@ -83,34 +86,58 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
     );
   }
 
+  const buildTabHref = (targetTab: string) => {
+    const qParams = new URLSearchParams();
+    qParams.set("tab", targetTab);
+    qParams.set("page", "1");
+    if (search) qParams.set("search", search);
+    if (params.type) qParams.set("type", params.type);
+    if (params.warehouseId) qParams.set("warehouseId", params.warehouseId);
+    if (params.limit) qParams.set("limit", params.limit);
+    if (params.dateFrom) qParams.set("dateFrom", params.dateFrom);
+    if (params.dateTo) qParams.set("dateTo", params.dateTo);
+    return `/dashboard/accounts/vouchers?${qParams.toString()}`;
+  };
+
   return (
     <PageGuard permissionKey="accounts.vouchers">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">Vouchers</h1>
             <p className="text-sm text-muted-foreground">Create and manage accounting vouchers</p>
           </div>
+          <div className="flex items-center gap-2">
+            <ExportVouchersButton
+              search={search}
+              tab={tab}
+              filters={{
+                type: params.type,
+                dateFrom: params.dateFrom,
+                dateTo: params.dateTo,
+                warehouseId: selectedWarehouseId,
+              }}
+            />
+            {canCreate && (
+              <VoucherQuickCreate basePath="/dashboard/accounts/vouchers" />
+            )}
+          </div>
         </div>
 
-        {/* Quick Create Section */}
-        {canCreate && (
-          <VoucherQuickCreate basePath="/dashboard/accounts/vouchers" />
-        )}
 
         <Tabs defaultValue={tab} className="w-full">
           <TabsList>
             <TabsTrigger value="all" asChild>
-              <Link href="/dashboard/accounts/vouchers?tab=all&page=1">All Vouchers</Link>
+              <Link href={buildTabHref("all")}>All Vouchers</Link>
             </TabsTrigger>
             <TabsTrigger value="draft" asChild>
-              <Link href="/dashboard/accounts/vouchers?tab=draft&page=1">Draft</Link>
+              <Link href={buildTabHref("draft")}>Draft</Link>
             </TabsTrigger>
             <TabsTrigger value="posted" asChild>
-              <Link href="/dashboard/accounts/vouchers?tab=posted&page=1">Posted</Link>
+              <Link href={buildTabHref("posted")}>Posted</Link>
             </TabsTrigger>
             <TabsTrigger value="cancelled" asChild>
-              <Link href="/dashboard/accounts/vouchers?tab=cancelled&page=1">Cancelled</Link>
+              <Link href={buildTabHref("cancelled")}>Cancelled</Link>
             </TabsTrigger>
           </TabsList>
           <TabsContent value="all" className="mt-4">
@@ -118,7 +145,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               initialVouchers={result.vouchers || []}
               initialPagination={result.pagination || {
                 page: 1,
-                limit: 10,
+                limit: 20,
                 total: 0,
                 totalPages: 0,
               }}
@@ -131,6 +158,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               }}
               warehouses={warehouses}
               selectedWarehouseId={selectedWarehouseId || ""}
+              selectedType={params.type || "all"}
               isAdmin={isAdmin}
             />
           </TabsContent>
@@ -139,7 +167,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               initialVouchers={result.vouchers || []}
               initialPagination={result.pagination || {
                 page: 1,
-                limit: 10,
+                limit: 20,
                 total: 0,
                 totalPages: 0,
               }}
@@ -152,6 +180,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               }}
               warehouses={warehouses}
               selectedWarehouseId={selectedWarehouseId || ""}
+              selectedType={params.type || "all"}
               isAdmin={isAdmin}
             />
           </TabsContent>
@@ -160,7 +189,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               initialVouchers={result.vouchers || []}
               initialPagination={result.pagination || {
                 page: 1,
-                limit: 10,
+                limit: 20,
                 total: 0,
                 totalPages: 0,
               }}
@@ -173,6 +202,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               }}
               warehouses={warehouses}
               selectedWarehouseId={selectedWarehouseId || ""}
+              selectedType={params.type || "all"}
               isAdmin={isAdmin}
             />
           </TabsContent>
@@ -181,7 +211,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               initialVouchers={result.vouchers || []}
               initialPagination={result.pagination || {
                 page: 1,
-                limit: 10,
+                limit: 20,
                 total: 0,
                 totalPages: 0,
               }}
@@ -194,6 +224,7 @@ export default async function VouchersPage({ searchParams }: VouchersPageProps) 
               }}
               warehouses={warehouses}
               selectedWarehouseId={selectedWarehouseId || ""}
+              selectedType={params.type || "all"}
               isAdmin={isAdmin}
             />
           </TabsContent>

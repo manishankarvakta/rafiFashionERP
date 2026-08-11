@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { FiPlus, FiPackage } from "react-icons/fi";
 import StocksListClient from "./_components/stocks";
+import ExportStockButton from "./_components/ExportStockButton";
 import { auth } from "@/lib/auth";
+import PrintHeader, { PrintStyle } from "../../procurements/_components/print-header";
 import { hasPermission } from "@/lib/permissions";
 import PageGuard from "@/components/permissions/page-guard";
 
@@ -14,12 +16,14 @@ interface StockPageProps {
     search?: string;
     itemId?: string;
     warehouseId?: string;
+    limit?: string;
   }>;
 }
 
 export default async function StockPage({ searchParams }: StockPageProps) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
+  const limit = parseInt(params.limit || "20");
   const search = params.search || "";
   const itemId = params.itemId;
   const warehouseId = params.warehouseId;
@@ -50,7 +54,7 @@ export default async function StockPage({ searchParams }: StockPageProps) {
 
   // Check permissions and fetch data
   const [result, itemsResult, warehousesResult, canView, canAdjust, metricsResult] = await Promise.all([
-    getStocks(page, 10, {
+    getStocks(page, limit, {
       itemId,
       warehouseId: finalWarehouseId,
       search,
@@ -93,7 +97,9 @@ export default async function StockPage({ searchParams }: StockPageProps) {
   return (
     <PageGuard permissionKey="inventory.stock" requiredOperation="view">
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <PrintStyle />
+        <PrintHeader docTitle="Stock Report" docNumber="STOCK-REPORT" hideBarcode={true} />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Stock</h1>
             <p className="text-sm text-muted-foreground">View and manage inventory stock</p>
@@ -126,6 +132,7 @@ export default async function StockPage({ searchParams }: StockPageProps) {
               </div>
             </div>
 
+            <ExportStockButton search={search} itemId={itemId} warehouseId={finalWarehouseId} />
             {canAdjust && (
               <Button asChild>
                 <Link href="/dashboard/inventory/stock/adjust">
@@ -141,7 +148,7 @@ export default async function StockPage({ searchParams }: StockPageProps) {
           initialStocks={(result.stocks as any) || []}
           initialPagination={result.pagination || {
             page: 1,
-            limit: 10,
+            limit: 20,
             total: 0,
             totalPages: 0,
           }}

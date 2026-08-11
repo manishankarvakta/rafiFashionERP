@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,6 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   FiSearch,
   FiCheckCircle,
@@ -34,6 +41,7 @@ import {
 } from "../_actions/fine.action";
 import { toast } from "sonner";
 import AddFineDialog from "./add-fine-dialog";
+import ExportFinesButton from "./ExportFinesButton";
 import FineDetailsDialog from "./fine-details-dialog";
 import ConfirmDialog from "@/components/ui/confirm-dialog";
 import { FineStatus } from "@prisma/client";
@@ -92,6 +100,118 @@ export default function FinesClient({
 
   // Selection state for bulk operations
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isPending, startTransition] = useTransition();
+
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", page.toString());
+    router.push(`/dashboard/hr/fines?${params.toString()}`);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("limit", newLimit.toString());
+    params.set("page", "1");
+    router.push(`/dashboard/hr/fines?${params.toString()}`);
+  };
+
+  const renderLimitSelector = () => {
+    const limit = pagination?.limit ?? 20;
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(limit)}
+          onValueChange={(val: string) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    const totalPages = pagination?.totalPages ?? 0;
+    const page = pagination?.page ?? 1;
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(page - 1)}
+          disabled={page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(page, totalPages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(page + 1)}
+          disabled={page === totalPages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
 
   // Details dialog state
   const [selectedFine, setSelectedFine] = useState<FineItem | null>(null);
@@ -119,11 +239,29 @@ export default function FinesClient({
   });
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-BD", {
+    const formatted = new Intl.NumberFormat("en-BD", {
       style: "currency",
       currency: "BDT",
       minimumFractionDigits: 0,
     }).format(amount);
+    
+    if (formatted.includes("BDT")) {
+      return (
+        <>
+          <span className="print:hidden">BDT&nbsp;</span>
+          {formatted.replace("BDT", "").trim()}
+        </>
+      );
+    }
+    if (formatted.includes("৳")) {
+      return (
+        <>
+          <span className="print:hidden">৳</span>
+          {formatted.replace("৳", "").trim()}
+        </>
+      );
+    }
+    return formatted;
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -342,17 +480,35 @@ export default function FinesClient({
   };
 
   const getStatusBadge = (status: FineStatus) => {
-    switch (status) {
-      case "APPROVED":
-        return <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-200">Approved</Badge>;
-      case "APPLIED":
-        return <Badge className="bg-blue-500/15 text-blue-700 border-blue-200">Applied in Payroll</Badge>;
-      case "CANCELLED":
-        return <Badge variant="secondary" className="bg-gray-200 text-gray-700">Cancelled</Badge>;
-      case "PENDING":
-      default:
-        return <Badge className="bg-amber-500/15 text-amber-700 border-amber-200">Pending Approval</Badge>;
-    }
+    const getLabel = () => {
+      switch (status) {
+        case "APPROVED": return "Approved";
+        case "APPLIED": return "Applied";
+        case "CANCELLED": return "Cancelled";
+        case "PENDING":
+        default: return "Pending";
+      }
+    };
+    const label = getLabel();
+    const badge = (() => {
+      switch (status) {
+        case "APPROVED":
+          return <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-200">Approved</Badge>;
+        case "APPLIED":
+          return <Badge className="bg-blue-500/15 text-blue-700 border-blue-200">Applied in Payroll</Badge>;
+        case "CANCELLED":
+          return <Badge variant="secondary" className="bg-gray-200 text-gray-700">Cancelled</Badge>;
+        case "PENDING":
+        default:
+          return <Badge className="bg-amber-500/15 text-amber-700 border-amber-200">Pending Approval</Badge>;
+      }
+    })();
+    return (
+      <>
+        <div className="print:hidden">{badge}</div>
+        <span className="hidden print:inline text-black">{label}</span>
+      </>
+    );
   };
 
   const totalAmount = initialFines.reduce((acc, curr) => acc + curr.amount, 0);
@@ -361,6 +517,16 @@ export default function FinesClient({
 
   return (
     <div className="space-y-6">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Reduce table padding and font size for clean print layout */
+          .print-bordered th,
+          .print-bordered td {
+            padding: 4px 6px !important;
+            font-size: 8.5pt !important;
+          }
+        }
+      `}} />
       {/* View Details Modal */}
       <FineDetailsDialog
         open={detailsOpen}
@@ -391,7 +557,7 @@ export default function FinesClient({
       />
 
       {/* Top Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Fines & Penalties</h1>
           <p className="text-sm text-muted-foreground">
@@ -399,6 +565,7 @@ export default function FinesClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ExportFinesButton search={currentSearch} status={currentStatus} tab={currentTab} />
           {permissions.canCreate && currentTab !== "trash" && (
             <AddFineDialog onSuccess={() => router.refresh()} />
           )}
@@ -407,7 +574,7 @@ export default function FinesClient({
 
       {/* Summary Cards */}
       {currentTab !== "trash" && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3 print:hidden">
           <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
@@ -453,7 +620,7 @@ export default function FinesClient({
       )}
 
       {/* Main Tabs (All vs Trash) & Status Filters */}
-      <div className="space-y-4">
+      <div className="space-y-4 print:hidden">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b pb-3">
           <div className="flex items-center gap-2">
             <Button
@@ -504,7 +671,7 @@ export default function FinesClient({
 
       {/* Bulk Operation Action Bar */}
       {selectedIds.length > 0 && (
-        <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm print:hidden">
           <span className="font-medium text-primary">
             {selectedIds.length} item(s) selected
           </span>
@@ -535,21 +702,21 @@ export default function FinesClient({
 
       {/* Table */}
       <Card className="shadow-sm overflow-hidden">
-        <Table>
+        <Table className="print-bordered">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-12">
+              <TableHead className="w-12 print:hidden">
                 <Checkbox
                   checked={initialFines.length > 0 && selectedIds.length === initialFines.length}
                   onCheckedChange={handleSelectAll}
                 />
               </TableHead>
-              <TableHead>Employee</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead className="max-w-[260px]">Reason</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="print:w-[25%] whitespace-nowrap">Employee</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Date</TableHead>
+              <TableHead className="print:w-[15%] whitespace-nowrap">Amount</TableHead>
+              <TableHead className="max-w-[260px] print:w-[35%]">Reason</TableHead>
+              <TableHead className="print:w-[10%] whitespace-nowrap">Status</TableHead>
+              <TableHead className="text-right print:hidden">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -571,39 +738,39 @@ export default function FinesClient({
 
                 return (
                   <TableRow key={fine.id} className={isSelected ? "bg-muted/40" : undefined}>
-                    <TableCell className="w-12">
+                    <TableCell className="w-12 print:hidden">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) => handleSelectRow(fine.id, !!checked)}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="print:whitespace-nowrap">
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9 border">
+                        <Avatar className="h-9 w-9 border print:hidden">
                           <AvatarImage src={fine.employee.photo || undefined} alt={fine.employee.name} />
                           <AvatarFallback className="bg-destructive/10 text-destructive font-medium text-xs">
                             {initials}
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <div className="font-medium text-sm leading-tight">{fine.employee.name}</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="font-medium text-sm leading-tight print:text-black">{fine.employee.name}</div>
+                          <div className="text-xs text-muted-foreground print:text-black">
                             {fine.employee.employeeCode || "N/A"} {fine.employee.designation ? `• ${fine.employee.designation}` : ""}
                           </div>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm print:text-black print:whitespace-nowrap">
                       {new Date(fine.fineDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
                     </TableCell>
-                    <TableCell className="font-semibold text-rose-600">
+                    <TableCell className="font-semibold text-rose-600 print:text-black print:whitespace-nowrap print:font-bold">
                       {formatCurrency(fine.amount)}
                     </TableCell>
-                    <TableCell className="max-w-[260px] text-sm text-muted-foreground truncate" title={fine.reason}>
+                    <TableCell className="max-w-[260px] text-sm text-muted-foreground truncate print:text-black" title={fine.reason}>
                       {fine.reason}
                     </TableCell>
-                    <TableCell>{getStatusBadge(fine.status)}</TableCell>
-                    <TableCell className="text-right space-x-1">
+                    <TableCell className="print:whitespace-nowrap print:text-black">{getStatusBadge(fine.status)}</TableCell>
+                    <TableCell className="text-right space-x-1 print:hidden">
                       {/* View Details Button */}
                       <Button
                         size="icon"
@@ -695,6 +862,21 @@ export default function FinesClient({
           </TableBody>
         </Table>
       </Card>
+
+      {/* Pagination controls */}
+      {pagination && ((pagination.totalPages ?? 0) > 1 || (pagination.total ?? 0) > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4 px-1 print:hidden">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {(((pagination.page ?? 1) - 1) * (pagination.limit ?? 20)) + 1} to{" "}
+              {Math.min((pagination.page ?? 1) * (pagination.limit ?? 20), pagination.total ?? 0)} of{" "}
+              {pagination.total ?? 0} fines
+            </div>
+            {renderLimitSelector()}
+          </div>
+          {renderPaginationButtons()}
+        </div>
+      )}
     </div>
   );
 }

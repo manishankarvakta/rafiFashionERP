@@ -5,7 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
 import { FiPlus } from "react-icons/fi";
 import CategoriesListClient from "./_components/categories";
+import ExportCategoriesButton from "./_components/ExportCategoriesButton";
 import { auth } from "@/lib/auth";
+import PrintHeader, { PrintStyle } from "../../procurements/_components/print-header";
 import { hasPermission } from "@/lib/permissions";
 import PageGuard from "@/components/permissions/page-guard";
 
@@ -14,12 +16,14 @@ interface CategoriesPageProps {
     page?: string;
     search?: string;
     tab?: string;
+    limit?: string;
   }>;
 }
 
 export default async function CategoriesPage({ searchParams }: CategoriesPageProps) {
   const params = await searchParams;
   const page = parseInt(params.page || "1");
+  const limit = parseInt(params.limit || "20");
   const search = params.search || "";
   const tab = params.tab || "all";
 
@@ -28,7 +32,7 @@ export default async function CategoriesPage({ searchParams }: CategoriesPagePro
 
   // Check permissions on server side for better performance
   const [result, canView, canEdit, canMoveToTrash, canDeletePermanently] = await Promise.all([
-    getCategories(page, 10, search, tab === "trash" ? "trash" : "all"),
+    getCategories(page, limit, search, tab === "trash" ? "trash" : "all"),
     userId ? hasPermission(userId, "master.categories", "view") : false,
     userId ? hasPermission(userId, "master.categories", "edit") : false,
     userId ? hasPermission(userId, "master.categories", "move-to-trash") : false,
@@ -57,23 +61,29 @@ export default async function CategoriesPage({ searchParams }: CategoriesPagePro
   return (
     <PageGuard permissionKey="master.categories" requiredOperation="view">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <PrintStyle />
+        <PrintHeader docTitle="Categories List" docNumber="CAT-LIST" hideBarcode={true} />
+        <div className="flex items-center justify-between print:hidden">
           <div>
             <h1 className="text-2xl font-semibold">Categories</h1>
             <p className="text-sm text-muted-foreground">Manage categories in your system</p>
           </div>
-          {tab !== "trash" && canEdit && (
-            <Button asChild>
-              <Link href="/dashboard/master/categories/add">
-                <FiPlus className="mr-2 h-4 w-4" />
-                Add Category
-              </Link>
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <ExportCategoriesButton search={search} tab={tab} />
+            {tab !== "trash" && canEdit && (
+              <Button asChild>
+                <Link href="/dashboard/master/categories/add">
+                  <FiPlus className="mr-2 h-4 w-4" />
+                  Add Category
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
 
+
         <Tabs defaultValue={tab} className="w-full">
-          <TabsList>
+          <TabsList className="print:hidden">
             <TabsTrigger value="all" asChild>
               <Link href="/dashboard/master/categories?tab=all&page=1">All Categories</Link>
             </TabsTrigger>
@@ -86,7 +96,7 @@ export default async function CategoriesPage({ searchParams }: CategoriesPagePro
               initialCategories={result.categories || []}
               initialPagination={result.pagination || {
                 page: 1,
-                limit: 10,
+                limit: 20,
                 total: 0,
                 totalPages: 0,
               }}
@@ -99,7 +109,7 @@ export default async function CategoriesPage({ searchParams }: CategoriesPagePro
               initialCategories={result.categories || []}
               initialPagination={result.pagination || {
                 page: 1,
-                limit: 10,
+                limit: 20,
                 total: 0,
                 totalPages: 0,
               }}

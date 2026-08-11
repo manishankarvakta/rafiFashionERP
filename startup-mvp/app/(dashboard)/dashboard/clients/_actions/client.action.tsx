@@ -143,9 +143,20 @@ export async function getClients(
         });
 
         // AR is an Asset account: debit increases balance, credit reduces it
-        const due =
-          Number(balanceResult._sum.debitAmount || 0) -
-          Number(balanceResult._sum.creditAmount || 0);
+        const totalDebit = Number(balanceResult._sum.debitAmount || 0);
+        const totalCredit = Number(balanceResult._sum.creditAmount || 0);
+        let due = totalDebit - totalCredit;
+
+        // If there's an opening balance but no posted journal entry voucher for it, add it to outstanding balance
+        const hasOpeningJournal = await prisma.journalEntryLine.findFirst({
+          where: {
+            chartOfAccountId: coaId,
+            description: { contains: "opening balance", mode: "insensitive" },
+          },
+        });
+        if (Number(client.openingBalance || 0) > 0 && !hasOpeningJournal) {
+          due += Number(client.openingBalance || 0);
+        }
 
         return { ...client, dueAmount: Math.max(0, due) };
       })
@@ -1488,25 +1499,43 @@ export async function getClientLedger(
     rawTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Date range filtering
-    let filteredTransactions = rawTransactions;
     const start = startDate ? new Date(startDate) : null;
     const end = endDate ? new Date(endDate) : null;
 
     if (start) {
       start.setHours(0, 0, 0, 0);
+    }
+    if (end) {
+      end.setHours(23, 59, 59, 999);
+    }
+
+    // Calculate prior balance of all transactions before the start date
+    let priorBalance = 0;
+    if (start) {
+      const priorTransactions = rawTransactions.filter(
+        (t) => new Date(t.date) < start
+      );
+      priorBalance = priorTransactions.reduce(
+        (sum, t) => sum + (t.debit - t.credit),
+        0
+      );
+    }
+
+    // Filter transactions for the selected range
+    let filteredTransactions = rawTransactions;
+    if (start) {
       filteredTransactions = filteredTransactions.filter(
         (t) => new Date(t.date) >= start
       );
     }
     if (end) {
-      end.setHours(23, 59, 59, 999);
       filteredTransactions = filteredTransactions.filter(
         (t) => new Date(t.date) <= end
       );
     }
 
-    // Compute running balance
-    let runningBalance = 0;
+    // Compute running balance starting with priorBalance
+    let runningBalance = priorBalance;
     let totalBilled = 0;
     let totalPaid = 0;
 
@@ -1520,6 +1549,22 @@ export async function getClientLedger(
         runningBalance,
       };
     });
+
+    // Prepend a virtual Balance Forward transaction if a start date is specified
+    if (start) {
+      ledger.unshift({
+        id: `prior-bal-${client.id}`,
+        date: start,
+        type: "PRIOR_BALANCE",
+        typeLabel: "Balance Forward",
+        reference: "-",
+        description: "Outstanding balance brought forward from previous period",
+        status: "POSTED",
+        debit: 0,
+        credit: 0,
+        runningBalance: priorBalance,
+      } as any);
+    }
 
     return {
       success: true,
@@ -1588,5 +1633,124 @@ export async function getWarehousesForClient() {
     };
   }
 }
+
+/**
+ * Get all clients matching filters for export (no pagination limit)
+ */
+export async function getAllClientsForExport(
+  search: string = "",
+  status: "active" | "inactive" | "trash" | "all" = "all",
+  warehouseId: string = "all",
+  clientIds?: string[]
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return { success: false, error: "Unauthorized", clients: [] };
+    }
+
+    const where: Prisma.ClientWhereInput = {};
+
+    if (clientIds && clientIds.length > 0) {
+      where.id = { in: clientIds };
+    } else {
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: "insensitive" } },
+          { clientCode: { contains: search, mode: "insensitive" } },
+          { email: { contains: search, mode: "insensitive" } },
+          { phone: { contains: search, mode: "insensitive" } },
+          { company: { contains: search, mode: "insensitive" } },
+          { address: { contains: search, mode: "insensitive" } },
+        ];
+      }
+
+      if (status === "trash") {
+        where.status = "trash";
+      } else if (status === "active") {
+        where.status = "active";
+      } else if (status === "inactive") {
+        where.status = "inactive";
+      } else if (status === "all") {
+        where.status = { not: "trash" };
+      }
+
+      if (warehouseId && warehouseId !== "all") {
+        where.warehouseId = warehouseId;
+      }
+    }
+
+    const clients = await prisma.client.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        clientCode: true,
+        email: true,
+        phone: true,
+        address: true,
+        city: true,
+        state: true,
+        zip: true,
+        country: true,
+        company: true,
+        openingBalance: true,
+        status: true,
+        clientType: true,
+        membershipTier: true,
+        membershipPoints: true,
+        warehouse: { select: { name: true } },
+        createdByUser: { select: { name: true } },
+        ChartOfAccount: { select: { id: true } },
+        createdAt: true,
+      },
+    });
+
+    const clientsWithDue = await Promise.all(
+      clients.map(async (client) => {
+        let dueAmount = 0;
+        const coaId = client.ChartOfAccount?.id;
+        if (coaId) {
+          const balanceResult = await prisma.journalEntryLine.aggregate({
+            where: { chartOfAccountId: coaId },
+            _sum: { debitAmount: true, creditAmount: true },
+          });
+          const totalDebit = Number(balanceResult._sum.debitAmount || 0);
+          const totalCredit = Number(balanceResult._sum.creditAmount || 0);
+          let due = totalDebit - totalCredit;
+
+          // If there's an opening balance but no posted journal entry voucher for it, add it
+          const hasOpeningJournal = await prisma.journalEntryLine.findFirst({
+            where: {
+              chartOfAccountId: coaId,
+              description: { contains: "opening balance", mode: "insensitive" },
+            },
+          });
+          if (Number(client.openingBalance || 0) > 0 && !hasOpeningJournal) {
+            due += Number(client.openingBalance || 0);
+          }
+          dueAmount = due;
+        }
+
+        return {
+          ...client,
+          openingBalance: Number(client.openingBalance || 0),
+          dueAmount,
+        };
+      })
+    );
+
+    return { success: true, clients: clientsWithDue };
+  } catch (error) {
+    console.error("getAllClientsForExport error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch clients for export",
+      clients: [],
+    };
+  }
+}
+
 
 

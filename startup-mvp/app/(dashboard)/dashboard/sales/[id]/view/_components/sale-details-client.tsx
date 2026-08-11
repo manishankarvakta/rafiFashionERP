@@ -13,21 +13,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { FiArrowLeft, FiEdit, FiFileText, FiUser, FiCalendar, FiClock, FiHome, FiPrinter } from "react-icons/fi";
+import { FiArrowLeft, FiEdit, FiFileText, FiUser, FiCalendar, FiClock, FiHome, FiPrinter, FiBookOpen } from "react-icons/fi";
 import { format } from "date-fns";
 import { Separator } from "@/components/ui/separator";
 import type { SaleStatus } from "@prisma/client";
 import PosReceiptPrint from "./pos-receipt-print";
 import { numberToWords } from "@/lib/utils/number-to-words";
+import PrintHeader, { PrintStyle } from "@/app/(dashboard)/dashboard/procurements/_components/print-header";
 
 interface SaleDetailsClientProps {
   sale: any;
+  organization?: any;
   cashAccount: any;
   cardAccount: any;
   mfsAccount: any;
   couponDiscountAccount?: { code: string; name: string } | null;
   salesDiscountAccount?: { code: string; name: string } | null;
   extractedMembershipDiscount: number;
+  vouchers?: any[];
+  isAdmin?: boolean;
 }
 
 const STATUS_LABELS: Record<SaleStatus, string> = {
@@ -39,12 +43,15 @@ const STATUS_LABELS: Record<SaleStatus, string> = {
 
 export default function SaleDetailsClient({
   sale,
+  organization,
   cashAccount,
   cardAccount,
   mfsAccount,
   couponDiscountAccount,
   salesDiscountAccount,
   extractedMembershipDiscount,
+  vouchers = [],
+  isAdmin = false,
 }: SaleDetailsClientProps) {
   const [printMode, setPrintMode] = useState<"a4" | "challan">("a4");
 
@@ -102,6 +109,30 @@ export default function SaleDetailsClient({
     changeAmount?: number;
   } | null;
 
+  const initialPaid = paymentDetails 
+    ? (Number(paymentDetails.cashAmount || 0) + Number(paymentDetails.cardAmount || 0) + Number(paymentDetails.mfsAmount || 0) - Number(paymentDetails.changeAmount || 0))
+    : 0;
+
+  let dueCollectionsPaid = 0;
+  if (paymentDetails && Array.isArray((paymentDetails as any).dueCollections)) {
+    for (const col of (paymentDetails as any).dueCollections) {
+      dueCollectionsPaid += Number(col.cashAmount || 0) + Number(col.cardAmount || 0) + Number(col.mfsAmount || 0);
+    }
+  }
+
+  const grandTotalAmount = Number(sale.grandTotal || 0);
+  const netPaid = initialPaid + dueCollectionsPaid;
+  const remainingDue = Number((grandTotalAmount - netPaid).toFixed(2));
+
+  let paymentStatus: "PAID" | "DUE" | "PARTIAL" = "PAID";
+  if (remainingDue <= 0.01 || netPaid >= grandTotalAmount - 0.01) {
+    paymentStatus = "PAID";
+  } else if (netPaid <= 0.01 || initialPaid <= 0) {
+    paymentStatus = "DUE";
+  } else {
+    paymentStatus = "PARTIAL";
+  }
+
   const totalReceived = paymentDetails 
     ? (Number(paymentDetails.cashAmount || 0) + Number(paymentDetails.cardAmount || 0) + Number(paymentDetails.mfsAmount || 0))
     : 0;
@@ -109,49 +140,18 @@ export default function SaleDetailsClient({
 
   return (
     <div className="space-y-6 print:space-y-3">
+      {/* Print-only: multi-page print fix + page numbering */}
+      <PrintStyle />
+
       {/* Print-only Invoice/Challan Header */}
-      <div className="hidden print:block border-b border-slate-300 pb-2 mb-3">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold uppercase tracking-wide text-slate-900">
-              {sale.warehouse?.name || "Ferrari Fashion"}
-            </h1>
-            {sale.warehouse?.address ? (
-              <>
-                <p className="text-xs text-slate-600">{sale.warehouse.address}</p>
-                {(sale.warehouse.city || sale.warehouse.state || sale.warehouse.zip || sale.warehouse.country) && (
-                  <p className="text-xs text-slate-600">
-                    {[
-                      sale.warehouse.city,
-                      sale.warehouse.state,
-                      sale.warehouse.zip,
-                      sale.warehouse.country,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-slate-600">House #14, Road #04, Sector #03</p>
-                <p className="text-xs text-slate-600">Uttara, Dhaka-1230, Bangladesh</p>
-              </>
-            )}
-            <p className="text-xs text-slate-600">Phone: +880 1841 556677</p>
-          </div>
-          <div className="text-right">
-            <h2 className="text-xl font-bold uppercase text-slate-800">
-              {printMode === "challan" ? "Delivery Challan" : "Sales Invoice"}
-            </h2>
-            <div className="mt-2 text-xs space-y-0.5">
-              <p><span className="font-semibold">Invoice Number:</span> {sale.saleNumber}</p>
-              <p><span className="font-semibold">Date:</span> {format(new Date(sale.date), "dd MMM yyyy")}</p>
-              <p><span className="font-semibold">Status:</span> {STATUS_LABELS[sale.status as SaleStatus]}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <PrintHeader
+        docNumber={sale.saleNumber}
+        docTitle={printMode === "challan" ? "DELIVERY CHALLAN" : "SALES INVOICE"}
+        organizationName={organization?.name}
+        organizationAddress={organization?.address}
+        organizationEmail={organization?.email}
+        organizationPhone={organization?.phone}
+      />
 
       {/* Header */}
       <div className="flex items-center justify-between print:hidden">
@@ -160,6 +160,17 @@ export default function SaleDetailsClient({
             <h1 className="text-3xl font-bold">{sale.saleNumber}</h1>
             <Badge variant={getStatusBadgeVariant(sale.status as SaleStatus)} className="text-sm px-3 py-1">
               {STATUS_LABELS[sale.status as SaleStatus]}
+            </Badge>
+            <Badge
+              className={`text-sm px-3 py-1 border font-bold uppercase ${
+                paymentStatus === "PAID"
+                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                  : paymentStatus === "PARTIAL"
+                  ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                  : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+              }`}
+            >
+              {paymentStatus === "PAID" ? "Paid" : paymentStatus === "PARTIAL" ? "Partial Paid" : "Due"}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">Sale Details</p>
@@ -192,33 +203,89 @@ export default function SaleDetailsClient({
         </div>
       </div>
 
-      {/* Print-only Metadata block (Customer & Warehouse) */}
-      <div className="hidden print:grid print:grid-cols-2 print:gap-4 print:border print:border-slate-200 print:rounded-lg print:p-3 print:mb-2 text-xs">
-        <div>
-          <h3 className="font-semibold text-slate-800 mb-1 uppercase tracking-wide text-xs">Customer Details:</h3>
-          <p className="font-bold text-slate-900">{sale.client.name || sale.client.email}</p>
-          {sale.client.company && (
-            <p className="text-slate-600 text-xs">{sale.client.company}</p>
-          )}
-          {sale.client.email && (
-            <p className="text-slate-600 text-xs">Email: {sale.client.email}</p>
-          )}
-          {sale.client.phone && (
-            <p className="text-slate-600 text-xs">Phone: {sale.client.phone}</p>
-          )}
-        </div>
-        <div>
-          <h3 className="font-semibold text-slate-800 mb-1 uppercase tracking-wide text-xs">Outlet / Warehouse:</h3>
-          {sale.warehouse ? (
-            <>
-              <p className="font-bold text-slate-900">{sale.warehouse.name}</p>
-              <p className="text-slate-600 text-xs font-mono">Code: {sale.warehouse.code}</p>
-            </>
-          ) : (
-            <p className="text-slate-500 italic">Not assigned</p>
-          )}
-        </div>
-      </div>
+      {/* Main Information Grid (Single Card 3-Column Layout matching TPN/GRN/RTV) */}
+      <Card className="print:shadow-none print:border-0 print:bg-transparent">
+        <CardContent className="pt-6 print:p-1.5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:grid-cols-3 print:gap-4">
+            {/* Col 1: Customer Details */}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground print:text-[10px] mb-1">Customer Details</p>
+              {sale.client ? (
+                <div>
+                  <p className="text-base font-bold print:text-xs text-slate-900">
+                    {sale.client.name || sale.client.company || sale.client.email}
+                  </p>
+                  <div className="text-xs text-muted-foreground print:text-[9px] mt-0.5 space-y-0.5">
+                    {sale.client.company && sale.client.name && <p>{sale.client.company}</p>}
+                    {sale.client.phone && <p>Phone: {sale.client.phone}</p>}
+                    {sale.client.email && <p>Email: {sale.client.email}</p>}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground print:text-[9px]">Walk-in Customer</p>
+              )}
+            </div>
+
+            {/* Col 2: Outlet / Warehouse */}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground print:text-[10px] mb-1">Outlet / Warehouse</p>
+              {sale.warehouse ? (
+                <div>
+                  <p className="text-base font-bold print:text-xs text-slate-900">{sale.warehouse.name}</p>
+                  {sale.warehouse.address ? (
+                    <div className="text-xs text-muted-foreground print:text-[9px] mt-0.5 space-y-0.5">
+                      <p>{sale.warehouse.address}</p>
+                      {(sale.warehouse.city || sale.warehouse.state || sale.warehouse.zip || sale.warehouse.country) && (
+                        <p>
+                          {[
+                            sale.warehouse.city,
+                            sale.warehouse.state,
+                            sale.warehouse.zip,
+                            sale.warehouse.country,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground print:text-[9px] mt-0.5">Code: {sale.warehouse.code}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground print:text-[9px]">Not assigned</p>
+              )}
+            </div>
+
+            {/* Col 3: Sale Information (Right Aligned) */}
+            <div className="text-right">
+              <p className="text-sm font-medium text-muted-foreground print:text-[10px] mb-1">Sale Information</p>
+              <div className="space-y-1 text-sm print:text-xs">
+                <p>
+                  <span className="text-muted-foreground">Date: </span>
+                  <span className="font-medium text-slate-900">{format(new Date(sale.date), "dd MMMM yyyy")}</span>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Status: </span>
+                  <span className="font-semibold uppercase text-slate-800">{STATUS_LABELS[sale.status as SaleStatus]}</span>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Payment: </span>
+                  <span className={`font-bold uppercase text-[11px] px-2 py-0.5 rounded border ${
+                    paymentStatus === "PAID"
+                      ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                      : paymentStatus === "PARTIAL"
+                      ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                      : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                  }`}>
+                    {paymentStatus === "PAID" ? "Paid" : paymentStatus === "PARTIAL" ? "Partial Paid" : "Due"}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Main Information Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
@@ -238,9 +305,22 @@ export default function SaleDetailsClient({
             <Separator />
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Status</p>
-              <Badge variant={getStatusBadgeVariant(sale.status as SaleStatus)} className="text-sm">
-                {STATUS_LABELS[sale.status as SaleStatus]}
-              </Badge>
+              <div className="flex items-center gap-2 pt-1">
+                <Badge variant={getStatusBadgeVariant(sale.status as SaleStatus)} className="text-sm">
+                  {STATUS_LABELS[sale.status as SaleStatus]}
+                </Badge>
+                <Badge
+                  className={`text-sm border font-bold uppercase ${
+                    paymentStatus === "PAID"
+                      ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+                      : paymentStatus === "PARTIAL"
+                      ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+                      : "bg-rose-500/10 text-rose-600 border-rose-500/30"
+                  }`}
+                >
+                  {paymentStatus === "PAID" ? "Paid" : paymentStatus === "PARTIAL" ? "Partial Paid" : "Due"}
+                </Badge>
+              </div>
             </div>
             <Separator />
             <div className="space-y-1">
@@ -413,57 +493,81 @@ export default function SaleDetailsClient({
                   <span className="font-medium">{formatCurrency(changeAmount)}</span>
                 </div>
               )}
-              {((paymentDetails && (Number(paymentDetails.cashAmount || 0) > 0 || Number(paymentDetails.cardAmount || 0) > 0 || Number(paymentDetails.mfsAmount || 0) > 0)) || totalDiscount > 0) && (
+              {((paymentDetails && (Number(paymentDetails.cashAmount || 0) > 0 || Number(paymentDetails.cardAmount || 0) > 0 || Number(paymentDetails.mfsAmount || 0) > 0)) || totalDiscount > 0 || sale.orderType === "RETURN" || Number(sale.subTotal) < 0 || (vouchers && vouchers.length > 0)) && (
                 <>
                   <Separator className="my-2" />
                   <div className="space-y-1.5 pt-1">
-                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Payment Split Details</p>
-                    {paymentDetails && Number(paymentDetails.cashAmount || 0) > 0 && (
-                      (() => {
-                        const cashAmount = Number(paymentDetails.cashAmount || 0);
-                        const changeAmt = Number(paymentDetails.changeAmount || 0);
-                        const netCash = cashAmount - changeAmt;
-                        return (
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                      {sale.orderType === "RETURN" || Number(sale.subTotal) < 0 ? "Return Refund & Account Details" : "Payment Split Details"}
+                    </p>
+
+                    {(sale.orderType === "RETURN" || Number(sale.subTotal) < 0) ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-start text-xs gap-2">
+                          <span className="text-muted-foreground text-left leading-normal">
+                            Refund Account {cashAccount ? `(${cashAccount.code} - ${cashAccount.name})` : (sale.client?.name ? `(AR - ${sale.client.name})` : "")}
+                          </span>
+                          <span className="font-semibold shrink-0 text-red-600">
+                            {formatCurrency(Math.abs(Number(sale.grandTotal)))}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {paymentDetails && Number(paymentDetails.cashAmount || 0) > 0 && (
+                          (() => {
+                            const cashAmount = Number(paymentDetails.cashAmount || 0);
+                            const changeAmt = Number(paymentDetails.changeAmount || 0);
+                            const netCash = cashAmount - changeAmt;
+                            return (
+                              <div className="flex justify-between items-start text-xs gap-2">
+                                <span className="text-muted-foreground text-left leading-normal">
+                                  Cash {cashAccount ? `(${cashAccount.code} - ${cashAccount.name})` : ""}
+                                </span>
+                                <span className="font-semibold shrink-0">{formatCurrency(netCash)}</span>
+                              </div>
+                            );
+                          })()
+                        )}
+                        {paymentDetails && Number(paymentDetails.cardAmount || 0) > 0 && (
                           <div className="flex justify-between items-start text-xs gap-2">
                             <span className="text-muted-foreground text-left leading-normal">
-                              Cash {cashAccount ? `(${cashAccount.code} - ${cashAccount.name})` : ""}
+                              Card {cardAccount ? `(${cardAccount.code} - ${cardAccount.name})` : ""}
                             </span>
-                            <span className="font-semibold shrink-0">{formatCurrency(netCash)}</span>
+                            <span className="font-semibold shrink-0">{formatCurrency(Number(paymentDetails.cardAmount))}</span>
                           </div>
-                        );
-                      })()
-                    )}
-                    {paymentDetails && Number(paymentDetails.cardAmount || 0) > 0 && (
-                      <div className="flex justify-between items-start text-xs gap-2">
-                        <span className="text-muted-foreground text-left leading-normal">
-                          Card {cardAccount ? `(${cardAccount.code} - ${cardAccount.name})` : ""}
-                        </span>
-                        <span className="font-semibold shrink-0">{formatCurrency(Number(paymentDetails.cardAmount))}</span>
-                      </div>
-                    )}
-                    {paymentDetails && Number(paymentDetails.mfsAmount || 0) > 0 && (
-                      <div className="flex justify-between items-start text-xs gap-2">
-                        <span className="text-muted-foreground text-left leading-normal">
-                          MFS {mfsAccount ? `(${mfsAccount.code} - ${mfsAccount.name})` : ""}
-                        </span>
-                        <span className="font-semibold shrink-0">{formatCurrency(Number(paymentDetails.mfsAmount))}</span>
-                      </div>
-                    )}
-                    {couponDiscount > 0 && (
-                      <div className="flex justify-between items-start text-xs gap-2">
-                        <span className="text-muted-foreground text-left leading-normal">
-                          Coupon Discount {couponDiscountAccount ? `(${couponDiscountAccount.code} - ${couponDiscountAccount.name})` : ""}
-                        </span>
-                        <span className="font-semibold shrink-0 text-green-600">-{formatCurrency(couponDiscount)}</span>
-                      </div>
-                    )}
-                    {generalDiscount > 0 && (
-                      <div className="flex justify-between items-start text-xs gap-2">
-                        <span className="text-muted-foreground text-left leading-normal">
-                          Sales Discount {salesDiscountAccount ? `(${salesDiscountAccount.code} - ${salesDiscountAccount.name})` : ""}
-                        </span>
-                        <span className="font-semibold shrink-0 text-green-600">-{formatCurrency(generalDiscount)}</span>
-                      </div>
+                        )}
+                        {paymentDetails && Number(paymentDetails.mfsAmount || 0) > 0 && (
+                          <div className="flex justify-between items-start text-xs gap-2">
+                            <span className="text-muted-foreground text-left leading-normal">
+                              MFS {mfsAccount ? `(${mfsAccount.code} - ${mfsAccount.name})` : ""}
+                            </span>
+                            <span className="font-semibold shrink-0">{formatCurrency(Number(paymentDetails.mfsAmount))}</span>
+                          </div>
+                        )}
+                        {couponDiscount > 0 && (
+                          <div className="flex justify-between items-start text-xs gap-2">
+                            <span className="text-muted-foreground text-left leading-normal">
+                              Coupon Discount {couponDiscountAccount ? `(${couponDiscountAccount.code} - ${couponDiscountAccount.name})` : ""}
+                            </span>
+                            <span className="font-semibold shrink-0 text-green-600">-{formatCurrency(couponDiscount)}</span>
+                          </div>
+                        )}
+                        {generalDiscount > 0 && (
+                          <div className="flex justify-between items-start text-xs gap-2">
+                            <span className="text-muted-foreground text-left leading-normal">
+                              Sales Discount {salesDiscountAccount ? `(${salesDiscountAccount.code} - ${salesDiscountAccount.name})` : ""}
+                            </span>
+                            <span className="font-semibold shrink-0 text-green-600">-{formatCurrency(generalDiscount)}</span>
+                          </div>
+                        )}
+                        {remainingDue > 0.01 && (
+                          <div className="flex justify-between items-start text-xs gap-2 pt-1.5 border-t border-dashed border-border text-rose-600 font-bold">
+                            <span>Remaining Due Balance:</span>
+                            <span>{formatCurrency(remainingDue)}</span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </>
@@ -495,6 +599,7 @@ export default function SaleDetailsClient({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8 print:py-1 print:px-2 print:text-xs">#</TableHead>
                     <TableHead className="print:py-1 print:px-2 print:text-xs">Item Code</TableHead>
                     <TableHead className="print:py-1 print:px-2 print:text-xs">Description</TableHead>
                     <TableHead className="text-right print:py-1 print:px-2 print:text-xs">Quantity</TableHead>
@@ -503,8 +608,9 @@ export default function SaleDetailsClient({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sale.items.map((item: any) => (
+                  {sale.items.map((item: any, index: number) => (
                     <TableRow key={item.id}>
+                      <TableCell className="print:py-1.5 print:px-2 print:text-xs text-muted-foreground">{index + 1}</TableCell>
                       <TableCell className="print:py-1.5 print:px-2">
                         {item.item ? (
                           <Link
@@ -539,7 +645,7 @@ export default function SaleDetailsClient({
                   ))}
                   {sale.items.length > 0 && (
                     <TableRow className="font-bold bg-muted/20 hover:bg-muted/20">
-                      <TableCell colSpan={2} className="print:py-1.5 print:px-2 print:text-xs">Total</TableCell>
+                      <TableCell colSpan={3} className="print:py-1.5 print:px-2 print:text-xs">Total</TableCell>
                       <TableCell className="text-right font-mono print:py-1.5 print:px-2 print:text-xs">
                         {totalQuantity.toFixed(2)}
                       </TableCell>
@@ -631,6 +737,75 @@ export default function SaleDetailsClient({
           )}
         </CardContent>
       </Card>
+
+      {/* Accounting Vouchers & Ledger Entries (Admin Only) */}
+      {isAdmin && vouchers && vouchers.length > 0 && (
+        <Card className="print:hidden">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FiBookOpen className="h-5 w-5 text-primary" />
+              Accounting Vouchers & General Ledger Impact
+            </CardTitle>
+            <CardDescription>
+              Double-entry journal vouchers posted for this transaction
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {vouchers.map((v: any) => (
+              <div key={v.id} className="rounded-lg border bg-card p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                  <div className="flex items-center gap-2">
+                    <Link href={`/dashboard/accounts/vouchers/${v.id}`} className="font-mono text-sm font-bold text-primary hover:underline">
+                      {v.voucherNumber}
+                    </Link>
+                    <Badge variant="outline" className="text-xs uppercase font-mono">{v.type}</Badge>
+                    <Badge variant={v.status === "posted" ? "default" : "secondary"} className="text-xs uppercase">
+                      {v.status}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono">{v.reference}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">{v.description}</p>
+                
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-muted/40">
+                      <TableRow>
+                        <TableHead className="w-12 text-xs">#</TableHead>
+                        <TableHead className="text-xs">Account Code</TableHead>
+                        <TableHead className="text-xs">Account Name & Description</TableHead>
+                        <TableHead className="text-right text-xs">Debit (৳)</TableHead>
+                        <TableHead className="text-right text-xs">Credit (৳)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {v.VoucherLine?.map((line: any) => (
+                        <TableRow key={line.id || line.lineNumber}>
+                          <TableCell className="text-xs text-muted-foreground font-mono">{line.lineNumber}</TableCell>
+                          <TableCell className="text-xs font-mono font-medium">{line.ChartOfAccount?.code || "-"}</TableCell>
+                          <TableCell className="text-xs">
+                            <span className="font-semibold text-slate-800">{line.ChartOfAccount?.name || "-"}</span>
+                            {line.ChartOfAccount?.type && (
+                              <span className="ml-2 text-[10px] text-muted-foreground font-mono">({line.ChartOfAccount.type})</span>
+                            )}
+                            {line.description && <p className="text-[11px] text-muted-foreground">{line.description}</p>}
+                          </TableCell>
+                          <TableCell className="text-right text-xs font-mono font-medium">
+                            {Number(line.debitAmount) > 0 ? formatCurrency(Number(line.debitAmount)) : "-"}
+                          </TableCell>
+                          <TableCell className="text-right text-xs font-mono font-medium">
+                            {Number(line.creditAmount) > 0 ? formatCurrency(Number(line.creditAmount)) : "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status Timeline & Audit Information */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:hidden">

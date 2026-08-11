@@ -139,6 +139,36 @@ async function generateReturnSaleNumber(tx?: Prisma.TransactionClient): Promise<
   return `${prefix}${nextNumber.toString().padStart(4, "0")}`;
 }
 
+async function generateExchangeSaleNumber(tx?: Prisma.TransactionClient): Promise<string> {
+  const year = new Date().getFullYear();
+  const prefix = `EXC-${year}-`;
+  const client = tx || prisma;
+
+  const lastSale = await client.sale.findFirst({
+    where: {
+      saleNumber: {
+        startsWith: prefix,
+      },
+    },
+    orderBy: {
+      saleNumber: "desc",
+    },
+    select: {
+      saleNumber: true,
+    },
+  });
+
+  let nextNumber = 1;
+  if (lastSale?.saleNumber) {
+    const lastNumber = parseInt(lastSale.saleNumber.split("-").pop() || "0", 10);
+    if (!isNaN(lastNumber) && lastNumber >= 1) {
+      nextNumber = lastNumber + 1;
+    }
+  }
+
+  return `${prefix}${nextNumber.toString().padStart(4, "0")}`;
+}
+
 export async function getClientsForSale() {
   try {
     const session = await auth();
@@ -730,6 +760,79 @@ async function validateSaleAccounts(
 }
 
 /**
+ * Dynamically resolves the location-specific Cash ChartOfAccount for a given warehouse.
+ * 1. Checks for CashBankAccount explicitly assigned to warehouseId (type: CASH)
+ * 2. Matches location keyword in warehouse name (e.g. Rangpur -> Cash (Rangpur))
+ * 3. Safe fallback: Default active Cash ASSET account (1110 - Cash (Factory))
+ */
+export async function getWarehouseCashAccount(
+  warehouseId?: string | null,
+  tx?: Prisma.TransactionClient
+): Promise<string | null> {
+  const client = tx || prisma;
+
+  if (warehouseId) {
+    // 1. Direct DB lookup on CashBankAccount assigned to warehouseId
+    const assignedCashAccount = await client.cashBankAccount.findFirst({
+      where: {
+        type: "CASH",
+        status: "active",
+        warehouses: {
+          some: { id: warehouseId },
+        },
+      },
+      select: { chartOfAccountId: true },
+    });
+
+    if (assignedCashAccount?.chartOfAccountId) {
+      return assignedCashAccount.chartOfAccountId;
+    }
+
+    // 2. Fetch warehouse details to try location keyword matching
+    const warehouse = await client.warehouse.findUnique({
+      where: { id: warehouseId },
+      select: { name: true },
+    });
+
+    if (warehouse?.name) {
+      const warehouseName = warehouse.name;
+      let keyword = "";
+      if (/rangpur/i.test(warehouseName)) keyword = "Rangpur";
+      else if (/aziz/i.test(warehouseName)) keyword = "Aziz";
+      else if (/gulisthan|city plaza/i.test(warehouseName)) keyword = "Gulisthan";
+      else if (/factory/i.test(warehouseName)) keyword = "Factory";
+
+      if (keyword) {
+        const matchedAcct = await client.chartOfAccount.findFirst({
+          where: {
+            name: { contains: keyword, mode: "insensitive" },
+            type: "ASSET",
+            status: "active",
+          },
+          select: { id: true },
+        });
+
+        if (matchedAcct?.id) {
+          return matchedAcct.id;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback: First active Cash ASSET account (typically 1110 - Cash (Factory))
+  const fallbackAcct = await client.chartOfAccount.findFirst({
+    where: {
+      name: { contains: "Cash", mode: "insensitive" },
+      type: "ASSET",
+      status: "active",
+    },
+    select: { id: true },
+  });
+
+  return fallbackAcct?.id || null;
+}
+
+/**
  * Create accounting voucher for Sale
  * Debit: Accounts Receivable (Client or Default)
  * Credit: Sales Revenue
@@ -893,18 +996,11 @@ export async function createSaleAccountingVoucher(
             debitDescription = `Cash Received - ${sale.saleNumber} - ${sale.client.name}`;
           }
         } catch (_) {}
-        // Fallback: search for a "Cash" ASSET account by name
+        // Fallback: search for location-aware warehouse Cash ASSET account
         if (!debitAccountId) {
-          const cashAcct = await client.chartOfAccount.findFirst({
-            where: {
-              name: { contains: "Cash", mode: "insensitive" },
-              type: "ASSET",
-              status: "active",
-            },
-            select: { id: true },
-          });
-          if (cashAcct) {
-            debitAccountId = cashAcct.id;
+          const warehouseCashAcctId = await getWarehouseCashAccount(sale.warehouseId, client);
+          if (warehouseCashAcctId) {
+            debitAccountId = warehouseCashAcctId;
             debitDescription = `Cash Received - ${sale.saleNumber} - ${sale.client.name}`;
           }
         }
@@ -1162,7 +1258,8 @@ export async function createSaleAccountingVoucher(
 
         // Adjust for minor rounding discrepancies from scaling
         const totalScaled = paymentLines.reduce((sum, line) => sum + line.amount, 0);
-        const discrepancy = Number((absGrandTotal - totalScaled).toFixed(2));
+        const expectedTotal = totalPaid > absGrandTotal ? absGrandTotal : totalPaid;
+        const discrepancy = Number((expectedTotal - totalScaled).toFixed(2));
         if (discrepancy !== 0 && paymentLines.length > 0) {
           paymentLines[0].amount = Number((paymentLines[0].amount + discrepancy).toFixed(2));
         }
@@ -1325,6 +1422,7 @@ export async function getSales(
           orderType: true,
           grandTotal: true,
           isTrash: true,
+          paymentDetails: true,
           _count: {
             select: {
               items: true,
@@ -1575,6 +1673,7 @@ export async function getSaleByNumber(saleNumber: string) {
         discount: true,
         tax: true,
         grandTotal: true,
+        orderType: true,
         isTrash: true,
         client: {
           select: {
@@ -1583,6 +1682,8 @@ export async function getSaleByNumber(saleNumber: string) {
             email: true,
             company: true,
             phone: true,
+            clientType: true,
+            clientCode: true,
           },
         },
         warehouse: {
@@ -1606,6 +1707,7 @@ export async function getSaleByNumber(saleNumber: string) {
                 id: true,
                 code: true,
                 name: true,
+                itemType: true,
                 unit: {
                   select: {
                     symbol: true,
@@ -3291,10 +3393,8 @@ export async function processSaleReturn(saleId: string | null, returnItems: { it
         }
       }
 
-      const cashAccount = await tx.chartOfAccount.findFirst({
-        where: { name: { contains: "Cash", mode: "insensitive" }, type: "ASSET", status: "active" }
-      });
-      const creditAccountId = shouldRefundCash && cashAccount ? cashAccount.id : arAccountId;
+      const warehouseCashAccountId = await getWarehouseCashAccount(warehouseId, tx);
+      const creditAccountId = shouldRefundCash && warehouseCashAccountId ? warehouseCashAccountId : arAccountId;
       const debitAccountId = salesRevenueAccountId || arAccountId;
 
       if (debitAccountId && arAccountId) {
@@ -3460,29 +3560,315 @@ export async function processSaleReturn(saleId: string | null, returnItems: { it
   }
 }
 
-export async function getSalesByCustomer(customerId: string) {
+export async function processSaleExchange(payload: {
+  saleId?: string | null;
+  clientId: string;
+  warehouseId: string;
+  orderType?: "RETAIL" | "WHOLESALE";
+  paymentDetails?: {
+    cashAmount?: number;
+    cashAccountId?: string;
+    cardAmount?: number;
+    cardAccountId?: string;
+    mfsAmount?: number;
+    mfsAccountId?: string;
+    changeAmount?: number;
+  };
+  returnItems: {
+    itemId: string;
+    variantId?: string;
+    quantity: number;
+    unitPrice: number;
+    description?: string;
+  }[];
+  newItems: {
+    itemId: string;
+    variantId?: string;
+    quantity: number;
+    unitPrice: number;
+    description?: string;
+  }[];
+}) {
   try {
     const session = await auth();
     if (!session?.user) {
       return { success: false, error: "Unauthorized" };
     }
 
-    const sales = await prisma.sale.findMany({
-      where: {
-        clientId: customerId,
-        status: "COMPLETED",
-        NOT: {
-          saleNumber: {
-            startsWith: "RET-"
-          }
+    const { clientId, warehouseId, orderType = "RETAIL", paymentDetails, returnItems = [], newItems = [] } = payload;
+
+    if (returnItems.length === 0 && newItems.length === 0) {
+      return { success: false, error: "No items provided for exchange" };
+    }
+
+    const exchangeSaleData = await prisma.$transaction(async (tx) => {
+      // 1. Generate EXC Sale Number
+      const saleNumber = await generateExchangeSaleNumber(tx);
+
+      // 2. Fetch POS Settings for negative sale permissions
+      const posSettingsRaw = await tx.settings.findFirst({
+        where: { code: "pos_settings" }
+      });
+      const posSettings = posSettingsRaw?.settings as any || {};
+
+      let totalReturnSubtotal = 0;
+      let totalNewSubtotal = 0;
+      const saleItemsToCreate: any[] = [];
+
+      // 3. Process Return Items (Restock IN)
+      for (const ret of returnItems) {
+        if (ret.quantity <= 0) continue;
+
+        const dbItem = await tx.item.findUnique({
+          where: { id: ret.itemId },
+          select: { name: true, trackInventory: true, costPrice: true }
+        });
+        if (!dbItem) throw new Error(`Item not found for ID ${ret.itemId}`);
+
+        let desc = ret.description || dbItem.name;
+        if (ret.variantId) {
+          const dbVariant = await tx.productVariant.findUnique({
+            where: { id: ret.variantId },
+            select: { name: true }
+          });
+          if (dbVariant) desc += ` (${dbVariant.name})`;
         }
-      },
+
+        const linePrice = Number(ret.unitPrice || 0);
+        const lineQty = Number(ret.quantity);
+        const lineSubtotal = Number((lineQty * linePrice).toFixed(2));
+        totalReturnSubtotal += lineSubtotal;
+
+        // Update Stock (+Restock)
+        if (dbItem.trackInventory) {
+          const existingStock = ret.variantId
+            ? await tx.stock.findUnique({
+                where: {
+                  variantId_warehouseId: {
+                    variantId: ret.variantId,
+                    warehouseId: warehouseId
+                  }
+                }
+              })
+            : await tx.stock.findFirst({
+                where: {
+                  itemId: ret.itemId,
+                  warehouseId: warehouseId,
+                  variantId: null
+                }
+              });
+
+          if (existingStock) {
+            await tx.stock.update({
+              where: { id: existingStock.id },
+              data: { quantity: { increment: lineQty } }
+            });
+          } else {
+            await tx.stock.create({
+              data: {
+                itemId: ret.itemId,
+                warehouseId: warehouseId,
+                variantId: ret.variantId || null,
+                quantity: lineQty
+              }
+            });
+          }
+
+          // Ledger Entry IN
+          await tx.stockLedger.create({
+            data: {
+              itemId: ret.itemId,
+              variantId: ret.variantId || null,
+              warehouseId: warehouseId,
+              transactionType: "IN",
+              quantity: lineQty,
+              referenceType: "EXCHANGE",
+              referenceId: saleNumber,
+              notes: `Exchange Return Restock for ${saleNumber}`,
+              createdBy: session.user.id
+            }
+          });
+        }
+
+        saleItemsToCreate.push({
+          itemId: ret.itemId,
+          variantId: ret.variantId || null,
+          description: desc,
+          quantity: -lineQty,
+          unitPrice: linePrice,
+          amount: -lineSubtotal,
+          isReturnItem: true
+        });
+      }
+
+      // 4. Process New Purchase Items (Deduct OUT)
+      for (const newItem of newItems) {
+        if (newItem.quantity <= 0) continue;
+
+        const dbItem = await tx.item.findUnique({
+          where: { id: newItem.itemId },
+          select: { name: true, trackInventory: true, costPrice: true }
+        });
+        if (!dbItem) throw new Error(`Item not found for ID ${newItem.itemId}`);
+
+        let desc = newItem.description || dbItem.name;
+        if (newItem.variantId) {
+          const dbVariant = await tx.productVariant.findUnique({
+            where: { id: newItem.variantId },
+            select: { name: true }
+          });
+          if (dbVariant) desc += ` (${dbVariant.name})`;
+        }
+
+        const linePrice = Number(newItem.unitPrice || 0);
+        const lineQty = Number(newItem.quantity);
+        const lineSubtotal = Number((lineQty * linePrice).toFixed(2));
+        totalNewSubtotal += lineSubtotal;
+
+        // Check Stock & Deduct
+        if (dbItem.trackInventory) {
+          const existingStock = newItem.variantId
+            ? await tx.stock.findUnique({
+                where: {
+                  variantId_warehouseId: {
+                    variantId: newItem.variantId,
+                    warehouseId: warehouseId
+                  }
+                }
+              })
+            : await tx.stock.findFirst({
+                where: {
+                  itemId: newItem.itemId,
+                  warehouseId: warehouseId,
+                  variantId: null
+                }
+              });
+
+          const currentQty = existingStock ? Number(existingStock.quantity) : 0;
+          if (!posSettings?.allowNegativeSale && currentQty < lineQty) {
+            throw new Error(`Insufficient stock for item ${desc}. Available: ${currentQty}`);
+          }
+
+          if (existingStock) {
+            await tx.stock.update({
+              where: { id: existingStock.id },
+              data: { quantity: { decrement: lineQty } }
+            });
+          } else {
+            await tx.stock.create({
+              data: {
+                itemId: newItem.itemId,
+                warehouseId: warehouseId,
+                variantId: newItem.variantId || null,
+                quantity: -lineQty
+              }
+            });
+          }
+
+          // Ledger Entry OUT
+          await tx.stockLedger.create({
+            data: {
+              itemId: newItem.itemId,
+              variantId: newItem.variantId || null,
+              warehouseId: warehouseId,
+              transactionType: "OUT",
+              quantity: lineQty,
+              referenceType: "EXCHANGE",
+              referenceId: saleNumber,
+              notes: `Exchange New Item Sale for ${saleNumber}`,
+              createdBy: session.user.id
+            }
+          });
+        }
+
+        saleItemsToCreate.push({
+          itemId: newItem.itemId,
+          variantId: newItem.variantId || null,
+          description: desc,
+          quantity: lineQty,
+          unitPrice: linePrice,
+          amount: lineSubtotal,
+          isReturnItem: false
+        });
+      }
+
+      const netSubtotal = Number((totalNewSubtotal - totalReturnSubtotal).toFixed(2));
+      const grandTotal = netSubtotal;
+
+      // 5. Create Sale Record
+      const newSale = await tx.sale.create({
+        data: {
+          saleNumber,
+          date: new Date(),
+          status: "COMPLETED",
+          orderType: "EXCHANGE",
+          clientId,
+          warehouseId,
+          createdBy: session.user.id,
+          subTotal: netSubtotal,
+          discount: 0,
+          tax: 0,
+          grandTotal,
+          paymentDetails: paymentDetails || {},
+          notes: payload.saleId ? `Exchange for sale ID ${payload.saleId}` : "POS Exchange Sale",
+          items: {
+            create: saleItemsToCreate
+          }
+        },
+        include: {
+          items: true,
+          client: true
+        }
+      });
+
+      // 6. Generate Accounting Voucher
+      await createSaleAccountingVoucher(newSale.id, tx);
+
+      return newSale;
+    });
+
+    revalidateBothPaths("sales");
+    return { success: true, sale: exchangeSaleData };
+  } catch (error) {
+    console.error("processSaleExchange error:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to process sale exchange" };
+  }
+}
+
+export async function getSalesByCustomer(customerId: string, orderType?: string) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const where: Prisma.SaleWhereInput = {
+      clientId: customerId,
+      status: "COMPLETED",
+      NOT: {
+        saleNumber: {
+          startsWith: "RET-"
+        }
+      }
+    };
+
+    if (orderType) {
+      if (orderType === "WHOLESALE") {
+        where.orderType = "WHOLESALE";
+      } else {
+        where.orderType = { not: "WHOLESALE" };
+      }
+    }
+
+    const sales = await prisma.sale.findMany({
+      where,
       orderBy: {
         createdAt: "desc",
       },
       select: {
         id: true,
         saleNumber: true,
+        orderType: true,
         createdAt: true,
         grandTotal: true,
       },
@@ -3536,3 +3922,173 @@ export async function getLastSaleForUser() {
     };
   }
 }
+
+/**
+ * Get all sales matching filters for export (no pagination limit)
+ */
+export async function getAllSalesForExport(
+  search: string = "",
+  status: "trash" | "all" = "all",
+  filters?: {
+    billerId?: string;
+    warehouseId?: string;
+    type?: OrderType;
+    startDate?: string;
+    endDate?: string;
+    salesAssistantId?: string;
+  },
+  saleIds?: string[]
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return { success: false, error: "Unauthorized", sales: [] };
+    }
+
+    const canView = await hasPermission(session.user.id, "sales.sales", "view");
+    if (!canView) {
+      return { success: false, error: "You do not have permission to view sales", sales: [] };
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true, defaultWarehouseId: true }
+    });
+
+    const isAdmin = dbUser ? ['admin', 'superadmin'].includes(dbUser.role.toLowerCase()) : false;
+
+    const where: Prisma.SaleWhereInput = {
+      isTrash: status === "trash",
+    };
+
+    if (saleIds && saleIds.length > 0) {
+      where.id = { in: saleIds };
+    } else {
+      if (filters?.billerId && filters.billerId !== "all") {
+        where.createdBy = filters.billerId;
+      }
+      if (filters?.salesAssistantId && filters.salesAssistantId !== "all") {
+        where.salesAssistantId = filters.salesAssistantId;
+      }
+      if (!isAdmin && dbUser?.defaultWarehouseId) {
+        where.warehouseId = dbUser.defaultWarehouseId;
+      } else if (filters?.warehouseId && filters.warehouseId !== "all") {
+        where.warehouseId = filters.warehouseId;
+      }
+      if (filters?.type && (filters.type as string) !== "all") {
+        where.orderType = filters.type;
+      }
+      if (filters?.startDate || filters?.endDate) {
+        where.date = {};
+        if (filters.startDate) {
+          where.date.gte = new Date(filters.startDate);
+        }
+        if (filters.endDate) {
+          where.date.lte = new Date(filters.endDate);
+        }
+      }
+
+      if (search) {
+        where.OR = [
+          { saleNumber: { contains: search, mode: "insensitive" } },
+          { client: { name: { contains: search, mode: "insensitive" } } },
+          { client: { email: { contains: search, mode: "insensitive" } } },
+        ];
+      }
+    }
+
+    const sales = await prisma.sale.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        saleNumber: true,
+        date: true,
+        status: true,
+        orderType: true,
+        subTotal: true,
+        discount: true,
+        deliveryCharge: true,
+        tax: true,
+        grandTotal: true,
+        isTrash: true,
+        notes: true,
+        deliveryStatus: true,
+        courierName: true,
+        trackingNumber: true,
+        paymentDetails: true,
+        _count: {
+          select: {
+            items: true,
+          },
+        },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            company: true,
+          },
+        },
+        warehouse: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        salesAssistant: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const serializedSales = sales.map((sale) => {
+      const details = (sale.paymentDetails as any) || {};
+      const cashAmount = Number(details.cashAmount || 0);
+      const cardAmount = Number(details.cardAmount || 0);
+      const mfsAmount = Number(details.mfsAmount || 0);
+      const changeAmount = Number(details.changeAmount || 0);
+      const totalReceived = cashAmount + cardAmount + mfsAmount;
+
+      return {
+        ...sale,
+        subTotal: Number(sale.subTotal || 0),
+        discount: Number(sale.discount || 0),
+        deliveryCharge: Number(sale.deliveryCharge || 0),
+        tax: Number(sale.tax || 0),
+        grandTotal: Number(sale.grandTotal || 0),
+        cashAmount,
+        cardAmount,
+        mfsAmount,
+        totalReceived,
+        changeAmount,
+      };
+    });
+
+    return { success: true, sales: serializedSales };
+  } catch (error) {
+    console.error("getAllSalesForExport error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch sales for export",
+      sales: [],
+    };
+  }
+}
+
+
+

@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -21,13 +22,27 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FiSearch, FiCheckSquare, FiAlertCircle, FiEdit } from "react-icons/fi";
-import { processBulkAttendance } from "../_actions/attendance.action";
-import { getProductionLines } from "../../../employees/_actions/production-line.action";
-import { getEmployees } from "../../../employees/_actions/employee.action";
+import { processBulkAttendance, processBulkAttendanceRange, closeShiftBulk } from "../_actions/attendance.action";
+import { getWarehouses } from "../../../master/warehouses/_actions/warehouse.action";
+import { getEmployees, getAllEmployeeSkills } from "../../../employees/_actions/employee.action";
+import { getDepartments } from "../../../employees/departments/_actions/department.action";
+import { getDesignations } from "../../../employees/designations/_actions/designation.action";
+import { getFloors } from "../../../employees/floors/_actions/floor.action";
+import { getLines } from "../../../employees/lines/_actions/line.action";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { DatePickerWithRange } from "@/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
 
@@ -48,6 +63,7 @@ interface AttendanceRecord {
     name: string;
     employeeCode: string | null;
     designation: string | null;
+    biometricDeviceId?: string | null;
   };
   shift: {
     id: string;
@@ -73,21 +89,23 @@ interface AttendanceListClientProps {
     page: number;
     limit: number;
     search: string;
-    productionLineId: string;
+    warehouseId: string;
     deviceId: string;
     employeeId: string;
     fromDate: string;
     toDate: string;
     status: string;
-    departmentId: string;
-    designation: string;
+    departmentId?: string;
+    designationId?: string;
+    floorId?: string;
+    lineId?: string;
+    skill?: string;
   };
   permissions?: {
     view: boolean;
     edit: boolean;
   };
-  departments?: { id: string; name: string }[];
-  designations?: string[];
+  weekends?: number[];
 }
 
 const formatHoursMinutes = (decimalHours: any) => {
@@ -110,8 +128,7 @@ export default function AttendanceListClient({
   pagination,
   filters,
   permissions,
-  departments = [],
-  designations = [],
+  weekends = [0, 6],
 }: AttendanceListClientProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -119,43 +136,208 @@ export default function AttendanceListClient({
 
   // Local state for filters to allow debouncing/explicit search triggers
   const [localFilters, setLocalFilters] = useState(filters);
-  const [productionLines, setProductionLines] = useState<{id: string, name: string, code: string}[]>([]);
+  const [warehouses, setWarehouses] = useState<{id: string, name: string}[]>([]);
   const [employees, setEmployees] = useState<{id: string, name: string, employeeCode: string | null}[]>([]);
+  const [departments, setDepartments] = useState<{id: string, name: string}[]>([]);
+  const [designations, setDesignations] = useState<{id: string, name: string}[]>([]);
+  const [floors, setFloors] = useState<{id: string, name: string}[]>([]);
+  const [lines, setLines] = useState<{id: string, name: string}[]>([]);
+  const [skills, setSkills] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
+
+  // Clear selections when attendance records change (e.g. after pagination/filtering)
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [initialAttendances]);
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(initialAttendances.map((record) => record.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectRecord = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedIds((prev) => [...prev, id]);
+    } else {
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
+    }
+  };
+
+  const handleCloseShiftBulk = () => {
+    if (selectedIds.length === 0) return;
+    setIsCloseShiftModalOpen(true);
+  };
+
+  const confirmCloseShiftBulk = () => {
+    setIsCloseShiftModalOpen(false);
+    startTransition(async () => {
+      const result = await closeShiftBulk(selectedIds);
+      if (result.success) {
+        toast({ 
+          title: "Success", 
+          description: result.message + (result.warnings ? ` Warnings: ${result.warnings.join(", ")}` : "")
+        });
+        setSelectedIds([]);
+        router.refresh();
+      } else {
+        toast({ variant: "destructive", title: "Error", description: result.error });
+      }
+    });
+  };
 
   useEffect(() => {
     async function loadDropdowns() {
-      const [lineRes, empRes] = await Promise.all([
-        getProductionLines(),
-        getEmployees(1, 1000)
+      const [whRes, empRes, deptRes, desigRes, floorRes, lineRes, skillRes] = await Promise.all([
+        getWarehouses(1, 100),
+        getEmployees(1, 1000),
+        getDepartments(1, 100, "", "active"),
+        getDesignations(1, 100, "", "active"),
+        getFloors(1, 100, "", "active"),
+        getLines(1, 100, "", "active"),
+        getAllEmployeeSkills(),
       ]);
-      if (lineRes.success && lineRes.lines) setProductionLines(lineRes.lines);
+      if (whRes.success && whRes.warehouses) setWarehouses(whRes.warehouses);
       if (empRes.success && empRes.employees) setEmployees(empRes.employees);
+      if (deptRes.success && deptRes.departments) setDepartments(deptRes.departments as any);
+      if (desigRes.success && desigRes.designations) setDesignations(desigRes.designations as any);
+      if (floorRes.success && floorRes.floors) setFloors(floorRes.floors as any);
+      if (lineRes.success && lineRes.lines) setLines(lineRes.lines as any);
+      if (Array.isArray(skillRes)) setSkills(skillRes);
     }
     loadDropdowns();
   }, []);
 
+  const getPageNumbers = (currentPage: number, totalPages: number) => {
+    const pages: (number | string)[] = [];
+    const windowSize = 2;
+    pages.push(1);
+    const startRange = Math.max(2, currentPage - windowSize);
+    const endRange = Math.min(totalPages - 1, currentPage + windowSize);
+    if (startRange > 2) {
+      pages.push("...");
+    }
+    for (let i = startRange; i <= endRange; i++) {
+      pages.push(i);
+    }
+    if (endRange < totalPages - 1) {
+      pages.push("...");
+    }
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+    return pages;
+  };
+
+  const handlePageChange = (page: number) => {
+    pushFilters({ page });
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    pushFilters({ limit: newLimit, page: 1 });
+  };
+
+  const renderLimitSelector = () => {
+    if (!pagination) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
+        <Select
+          value={String(pagination.limit)}
+          onValueChange={(val: string) => handleLimitChange(Number(val))}
+          disabled={isPending}
+        >
+          <SelectTrigger className="w-[70px] h-8 text-xs">
+            <SelectValue placeholder={String(pagination.limit)} />
+          </SelectTrigger>
+          <SelectContent>
+            {[20, 50, 100, 200].map((opt) => (
+              <SelectItem key={opt} value={String(opt)}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  };
+
+  const renderPaginationButtons = () => {
+    if (!pagination || pagination.pages <= 1) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(pagination.page - 1)}
+          disabled={pagination.page === 1 || isPending}
+        >
+          Previous
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getPageNumbers(pagination.page, pagination.pages).map((p, idx) => {
+            if (p === "...") {
+              return (
+                <span key={`dots-${idx}`} className="px-1 text-sm text-muted-foreground">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === pagination.page;
+            return (
+              <Button
+                key={`page-${p}`}
+                variant={isCurrent ? "default" : "outline"}
+                size="sm"
+                className="h-8 w-8 p-0 text-xs"
+                onClick={() => handlePageChange(p as number)}
+                disabled={isPending}
+              >
+                {p}
+              </Button>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handlePageChange(pagination.page + 1)}
+          disabled={pagination.page === pagination.pages || isPending}
+        >
+          Next
+        </Button>
+      </div>
+    );
+  };
+
   const pushFilters = useCallback((newFilters: Partial<typeof filters>) => {
     const updated = { ...localFilters, ...newFilters, page: newFilters.page || 1 };
-    
-    // Clear designation if department changes
-    if (newFilters.hasOwnProperty("departmentId") && newFilters.departmentId !== localFilters.departmentId) {
-      updated.designation = "all";
-    }
-    
     setLocalFilters(updated);
     
     const params = new URLSearchParams();
     if (updated.page > 1) params.set("page", updated.page.toString());
-    if (updated.limit !== 10) params.set("limit", updated.limit.toString());
+    if (updated.limit !== 20) params.set("limit", updated.limit.toString());
     if (updated.search) params.set("search", updated.search);
-    if (updated.productionLineId && updated.productionLineId !== "all") params.set("productionLineId", updated.productionLineId);
+    if (updated.warehouseId && updated.warehouseId !== "all") params.set("warehouseId", updated.warehouseId);
     if (updated.employeeId && updated.employeeId !== "all") params.set("employeeId", updated.employeeId);
     if (updated.fromDate) params.set("fromDate", updated.fromDate);
     if (updated.toDate) params.set("toDate", updated.toDate);
     if (updated.status && updated.status !== "ALL") params.set("status", updated.status);
     if (updated.deviceId) params.set("deviceId", updated.deviceId);
+
     if (updated.departmentId && updated.departmentId !== "all") params.set("departmentId", updated.departmentId);
-    if (updated.designation && updated.designation !== "all") params.set("designation", updated.designation);
+    if (updated.designationId && updated.designationId !== "all") params.set("designationId", updated.designationId);
+    if (updated.floorId && updated.floorId !== "all") params.set("floorId", updated.floorId);
+    if (updated.lineId && updated.lineId !== "all") params.set("lineId", updated.lineId);
+    if (updated.skill && updated.skill !== "all") params.set("skill", updated.skill);
+
+    // Keep active limit
+    if (updated.limit) params.set("limit", updated.limit.toString());
 
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?${params.toString()}`);
@@ -164,30 +346,33 @@ export default function AttendanceListClient({
 
   const resetFilters = useCallback(() => {
     const todayStr = format(new Date(), "yyyy-MM-dd");
-    setLocalFilters({
-      page: 1,
-      limit: 10,
-      search: "",
-      productionLineId: "",
-      deviceId: "",
-      employeeId: "",
-      status: "ALL",
-      fromDate: todayStr,
-      toDate: todayStr,
-      departmentId: "all",
-      designation: "all"
+    setLocalFilters({ 
+      page: 1, limit: 20, search: "", warehouseId: "", deviceId: "", employeeId: "", status: "ALL", 
+      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "" 
     });
     startTransition(() => {
-      router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}`);
+      router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}&limit=20`);
     });
   }, [router]);
 
 
   const handleProcessBulk = () => {
     startTransition(async () => {
-      const result = await processBulkAttendance(localFilters.fromDate, localFilters.productionLineId === "all" ? undefined : localFilters.productionLineId);
+      const warehouseId = localFilters.warehouseId === "all" ? undefined : localFilters.warehouseId || undefined;
+      const departmentId = localFilters.departmentId === "all" ? undefined : localFilters.departmentId || undefined;
+      const designationId = localFilters.designationId === "all" ? undefined : localFilters.designationId || undefined;
+      const floorId = localFilters.floorId === "all" ? undefined : localFilters.floorId || undefined;
+      const lineId = localFilters.lineId === "all" ? undefined : localFilters.lineId || undefined;
+      const skill = localFilters.skill === "all" ? undefined : localFilters.skill || undefined;
+
+      // Use range version if toDate is set and differs from fromDate
+      const useRange = localFilters.toDate && localFilters.toDate !== localFilters.fromDate;
+      const result = useRange
+        ? await processBulkAttendanceRange(localFilters.fromDate, localFilters.toDate, warehouseId, departmentId, designationId, floorId, lineId, skill)
+        : await processBulkAttendance(localFilters.fromDate, warehouseId, departmentId, designationId, floorId, lineId, skill);
       if (result.success) {
-        toast({ title: "Success", description: `Processed ${result.count} un-punched attendances as ABSENT.` });
+        const days = (result as any).daysProcessed ? ` across ${(result as any).daysProcessed} days` : "";
+        toast({ title: "Success", description: `Processed ${result.count} un-punched attendances as ABSENT${days}.` });
       } else {
         toast({ variant: "destructive", title: "Error", description: result.error });
       }
@@ -222,7 +407,7 @@ export default function AttendanceListClient({
             <div className="relative">
               <FiSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Name or Code..."
+                placeholder="Name, Code or Device ID..."
                 className="pl-9"
                 value={localFilters.search}
                 onChange={(e) => setLocalFilters({ ...localFilters, search: e.target.value })}
@@ -242,58 +427,16 @@ export default function AttendanceListClient({
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-[200px]">
-            <label className="text-xs font-semibold text-muted-foreground">Production Line</label>
+            <label className="text-xs font-semibold text-muted-foreground">Warehouse</label>
             <SearchableSelect 
-              value={localFilters.productionLineId || "all"} 
-              onValueChange={(val) => pushFilters({ productionLineId: val || "all" })}
-              placeholder="All Production Lines"
+              value={localFilters.warehouseId || "all"} 
+              onValueChange={(val) => pushFilters({ warehouseId: val || "all" })}
+              placeholder="All Warehouses"
               options={[
-                { value: "all", label: "All Production Lines" },
-                { value: "none", label: "None (Not Assigned)" },
-                ...productionLines.map(l => ({ value: l.id, label: l.name }))
+                { value: "all", label: "All Warehouses" },
+                ...warehouses.map(w => ({ value: w.id, label: w.name }))
               ]}
             />
-          </div>
-
-          <div className="space-y-1.5 flex-1 min-w-[180px]">
-            <label className="text-xs font-semibold text-muted-foreground">Department</label>
-            <Select 
-              value={localFilters.departmentId || "all"} 
-              onValueChange={(val) => pushFilters({ departmentId: val })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All Departments" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[250px]">
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map((d) => (
-                  <SelectItem key={d.id} value={d.id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5 flex-1 min-w-[180px]">
-            <label className="text-xs font-semibold text-muted-foreground">Designation</label>
-            <Select 
-              value={localFilters.designation || "all"} 
-              onValueChange={(val) => pushFilters({ designation: val })}
-              disabled={localFilters.departmentId === "all" || !localFilters.departmentId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={(localFilters.departmentId === "all" || !localFilters.departmentId) ? "Select Dept First" : "All Designations"} />
-              </SelectTrigger>
-              <SelectContent className="max-h-[250px]">
-                <SelectItem value="all">All Designations</SelectItem>
-                {designations.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-[160px]">
@@ -307,7 +450,7 @@ export default function AttendanceListClient({
               </SelectTrigger>
               <SelectContent className="max-h-[250px]">
                 <SelectItem value="ALL">All Statuses</SelectItem>
-                <SelectItem value="ON_DUTY">On Duty (No Out Punch)</SelectItem>
+                <SelectItem value="ON_DUTY">Still on duty</SelectItem>
                 <SelectItem value="PRESENT">Present</SelectItem>
                 <SelectItem value="ABSENT">Absent</SelectItem>
                 <SelectItem value="LATE">Late</SelectItem>
@@ -317,6 +460,71 @@ export default function AttendanceListClient({
                 <SelectItem value="WEEKEND">Weekend</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[200px]">
+            <label className="text-xs font-semibold text-muted-foreground">Department</label>
+            <SearchableSelect 
+              value={localFilters.departmentId || "all"} 
+              onValueChange={(val) => pushFilters({ departmentId: val || "all" })}
+              placeholder="All Departments"
+              options={[
+                { value: "all", label: "All Departments" },
+                ...departments.map(d => ({ value: d.id, label: d.name }))
+              ]}
+            />
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[200px]">
+            <label className="text-xs font-semibold text-muted-foreground">Designation</label>
+            <SearchableSelect 
+              value={localFilters.designationId || "all"} 
+              onValueChange={(val) => pushFilters({ designationId: val || "all" })}
+              placeholder="All Designations"
+              options={[
+                { value: "all", label: "All Designations" },
+                ...designations.map(d => ({ value: d.id, label: d.name }))
+              ]}
+            />
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-muted-foreground">Floor</label>
+            <SearchableSelect 
+              value={localFilters.floorId || "all"} 
+              onValueChange={(val) => pushFilters({ floorId: val || "all" })}
+              placeholder="All Floors"
+              options={[
+                { value: "all", label: "All Floors" },
+                ...floors.map(f => ({ value: f.id, label: f.name }))
+              ]}
+            />
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-muted-foreground">Line</label>
+            <SearchableSelect 
+              value={localFilters.lineId || "all"} 
+              onValueChange={(val) => pushFilters({ lineId: val || "all" })}
+              placeholder="All Lines"
+              options={[
+                { value: "all", label: "All Lines" },
+                ...lines.map(l => ({ value: l.id, label: l.name }))
+              ]}
+            />
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-muted-foreground">Skill</label>
+            <SearchableSelect 
+              value={localFilters.skill || "all"} 
+              onValueChange={(val) => pushFilters({ skill: val || "all" })}
+              placeholder="All Skills"
+              options={[
+                { value: "all", label: "All Skills" },
+                ...skills.map(s => ({ value: s, label: s }))
+              ]}
+            />
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-[260px]">
@@ -358,10 +566,21 @@ export default function AttendanceListClient({
               Apply Search
             </Button>
             {permissions?.edit && (
-              <Button onClick={handleProcessBulk} disabled={isPending || !localFilters.fromDate} variant="secondary">
-                <FiCheckSquare className="mr-2 h-4 w-4" />
-                Process Un-Punched as Absent
-              </Button>
+              <>
+                <Button 
+                  onClick={handleCloseShiftBulk} 
+                  disabled={isPending || selectedIds.length === 0} 
+                  className="bg-green-600 hover:bg-green-700 text-white font-medium"
+                >
+                  <FiCheckSquare className="mr-2 h-4 w-4" />
+                  Close Shift {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
+                </Button>
+                <Button onClick={handleProcessBulk} disabled={isPending || !localFilters.fromDate} variant="secondary">
+                  <FiCheckSquare className="mr-2 h-4 w-4" />
+                  Process Un-Punched as Absent
+                  {localFilters.toDate && localFilters.toDate !== localFilters.fromDate ? " (Range)" : ""}
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -372,8 +591,15 @@ export default function AttendanceListClient({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={initialAttendances.length > 0 && selectedIds.length === initialAttendances.length}
+                  onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                />
+              </TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Employee</TableHead>
+              <TableHead>Device ID</TableHead>
               <TableHead>Check In</TableHead>
               <TableHead>Break Out/In</TableHead>
               <TableHead>Check Out</TableHead>
@@ -386,21 +612,38 @@ export default function AttendanceListClient({
           <TableBody>
             {initialAttendances.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                   No attendance records found.
                 </TableCell>
               </TableRow>
             ) : (
-              initialAttendances.map((record) => (
-                <TableRow key={record.id}>
-                  <TableCell className="font-medium whitespace-nowrap">
-                    {format(new Date(record.date), "MMM d, yyyy")}
-                  </TableCell>
+              initialAttendances.map((record) => {
+                const isWeekend = record.status === "WEEKEND" || weekends.includes(new Date(record.date).getUTCDay());
+                return (
+                  <TableRow key={record.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.includes(record.id)}
+                        onCheckedChange={(checked) => handleSelectRecord(record.id, !!checked)}
+                      />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="font-medium">{format(new Date(record.date), "MMM d, yyyy")}</div>
+                      <div 
+                        className="text-xs text-muted-foreground"
+                        style={isWeekend ? { color: "tomato" } : undefined}
+                      >
+                        {format(new Date(record.date), "EEEE")}
+                      </div>
+                    </TableCell>
                   <TableCell>
                     <div className="font-medium">{record.employee.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {record.employee.employeeCode || "No Code"}
                     </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <div className="text-xs font-mono">{record.employee.biometricDeviceId || "-"}</div>
                   </TableCell>
                   <TableCell>
                     {record.checkIn ? format(new Date(record.checkIn), "hh:mm a") : "-"}
@@ -469,36 +712,42 @@ export default function AttendanceListClient({
                     </TableCell>
                   )}
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
 
       {/* Pagination Controls */}
-      {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-end space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => pushFilters({ page: pagination.page - 1 })}
-            disabled={pagination.page <= 1 || isPending}
-          >
-            Previous
-          </Button>
-          <div className="text-sm text-muted-foreground">
-            Page {pagination.page} of {pagination.pages}
+      {pagination && (pagination.pages > 1 || pagination.total > 0) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Showing {((pagination.page - 1) * pagination.limit) + 1} to{" "}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
+              {pagination.total} records
+            </div>
+            {renderLimitSelector()}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => pushFilters({ page: pagination.page + 1 })}
-            disabled={pagination.page >= pagination.pages || isPending}
-          >
-            Next
-          </Button>
+          {renderPaginationButtons()}
         </div>
       )}
+
+      <AlertDialog open={isCloseShiftModalOpen} onOpenChange={setIsCloseShiftModalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Auto-Close Shift Confirmation</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to automatically close the shift for {selectedIds.length} selected employee(s)?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsCloseShiftModalOpen(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmCloseShiftBulk}>Confirm</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

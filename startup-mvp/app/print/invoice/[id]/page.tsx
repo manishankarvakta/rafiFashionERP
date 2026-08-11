@@ -13,6 +13,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
       include: {
         client: true,
         createdByUser: true,
+        warehouse: true,
         items: {
           include: {
             item: true,
@@ -37,6 +38,42 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
     return notFound();
   }
 
+  let previousDue = 0;
+  if (sale.clientId) {
+    const previousSales = await prisma.sale.findMany({
+      where: {
+        clientId: sale.clientId,
+        status: "COMPLETED",
+        isTrash: false,
+        id: { not: sale.id },
+        createdAt: { lte: sale.createdAt },
+      },
+    });
+
+    for (const pSale of previousSales) {
+      const pGrandTotal = pSale.grandTotal.toNumber();
+      const pDetails = pSale.paymentDetails as any;
+
+      let pInitialPaid = 0;
+      let pTotalCollected = 0;
+
+      if (pDetails) {
+        pInitialPaid = Number(pDetails.cashAmount || 0) + Number(pDetails.cardAmount || 0) + Number(pDetails.mfsAmount || 0) - Number(pDetails.changeAmount || 0);
+
+        if (Array.isArray(pDetails.dueCollections)) {
+          for (const col of pDetails.dueCollections) {
+            pTotalCollected += Number(col.cashAmount || 0) + Number(col.cardAmount || 0) + Number(col.mfsAmount || 0);
+          }
+        }
+      }
+
+      const pRemainingDue = Number((pGrandTotal - pInitialPaid - pTotalCollected).toFixed(2));
+      if (pRemainingDue > 0.01) {
+        previousDue += pRemainingDue;
+      }
+    }
+  }
+
   const posSettings = posSettingsRaw?.settings
     ? (posSettingsRaw.settings as any)
     : {
@@ -53,6 +90,22 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
 
   const totalItems = sale.items.length;
   const totalQty = sale.items.reduce((sum, item) => sum + Math.abs(item.quantity.toNumber()), 0);
+
+  const returnedSubtotal = sale.items
+    .filter((i) => i.isReturnItem || i.quantity.toNumber() < 0)
+    .reduce((sum, i) => sum + Math.abs(i.amount.toNumber()), 0);
+
+  const newSubtotal = sale.items
+    .filter((i) => !i.isReturnItem && i.quantity.toNumber() > 0)
+    .reduce((sum, i) => sum + Math.abs(i.amount.toNumber()), 0);
+
+  const sortedPrintItems = [...sale.items].sort((a, b) => {
+    const isAReturn = a.isReturnItem || a.quantity.toNumber() < 0;
+    const isBReturn = b.isReturnItem || b.quantity.toNumber() < 0;
+    if (isAReturn && !isBReturn) return -1;
+    if (!isAReturn && isBReturn) return 1;
+    return 0;
+  });
 
   const paperSize = posSettings.paperSize || "80mm";
   const widthClass = 
@@ -101,7 +154,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <h1 className="text-lg font-bold uppercase">{posSettings.headerText || "Ferrari Fashion"}</h1>
         {posSettings.subHeaderText && <p className="text-[10px] text-gray-600">{posSettings.subHeaderText}</p>}
         <p className="font-bold mt-1 text-xs">
-          {isReturn ? "Return Invoice No:" : "Invoice No:"} {sale.saleNumber}
+          {sale.orderType === "EXCHANGE" ? "Exchange Invoice No:" : isReturn ? "Return Invoice No:" : "Invoice No:"} {sale.saleNumber}
         </p>
       </div>
 
@@ -114,12 +167,12 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <div className="text-right">
           <p>Date: {sale.createdAt.toLocaleDateString()}</p>
           <p>Time: {sale.createdAt.toLocaleTimeString()}</p>
-          <p>Outlet: {posSettings.headerText || "Ferrari Fashion"}</p>
+          <p>Outlet: {sale.warehouse?.name || posSettings.headerText || "Ferrari Fashion"}</p>
         </div>
       </div>
 
       <div className="text-center font-bold border-y border-dashed border-black py-1 mb-2">
-        {isReturn ? "RETURN DETAILS" : "ORDER DETAILS"}
+        {sale.orderType === "EXCHANGE" ? "EXCHANGE DETAILS" : isReturn ? "RETURN DETAILS" : "ORDER DETAILS"}
       </div>
 
       <table className="w-full text-[10px] mb-4">
@@ -133,22 +186,29 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           </tr>
         </thead>
         <tbody className="border-b border-dashed border-black">
-          {sale.items.length === 0 && (
+          {sortedPrintItems.length === 0 && (
             <tr>
               <td colSpan={5} className="py-2 text-center">No Product in Purchase cart</td>
             </tr>
           )}
-          {sale.items.map((item, index) => (
-            <tr key={item.id}>
-              <td className="py-1 align-top">{index + 1}</td>
-              <td className="align-top">
-                {item.description || item.item?.name}
-              </td>
-              <td className="text-center align-top">{Math.abs(item.quantity.toNumber())}</td>
-              <td className="text-right align-top">{item.unitPrice.toNumber().toFixed(2)}</td>
-              <td className="text-right align-top">{Math.abs(item.amount.toNumber()).toFixed(2)}</td>
-            </tr>
-          ))}
+          {sortedPrintItems.map((item, index) => {
+            const isItemReturn = item.isReturnItem || item.quantity.toNumber() < 0 || item.amount.toNumber() < 0;
+            const itemQty = isItemReturn ? -Math.abs(item.quantity.toNumber()) : Math.abs(item.quantity.toNumber());
+            const itemTotal = isItemReturn ? -Math.abs(item.amount.toNumber()) : Math.abs(item.amount.toNumber());
+            const prefixTag = isItemReturn ? "(RET) " : sale.orderType === "EXCHANGE" ? "(NEW) " : "";
+            
+            return (
+              <tr key={item.id} className={isItemReturn ? "font-semibold" : ""}>
+                <td className="py-1 align-top">{index + 1}</td>
+                <td className="align-top">
+                  {prefixTag}{item.description || item.item?.name}
+                </td>
+                <td className="text-center align-top">{itemQty}</td>
+                <td className="text-right align-top">{item.unitPrice.toNumber().toFixed(2)}</td>
+                <td className="text-right align-top">{itemTotal.toFixed(2)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -157,10 +217,23 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           <span>Total Item: {totalItems}</span>
           <span>Total Qty: {totalQty}</span>
         </div>
-        <div className="flex justify-between">
-          <span>Total:</span>
-          <span>{Math.abs(sale.subTotal.toNumber()).toFixed(2)}</span>
-        </div>
+        {sale.orderType === "EXCHANGE" ? (
+          <>
+            <div className="flex justify-between font-semibold">
+              <span>Returned Subtotal:</span>
+              <span>-{returnedSubtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>New Items Subtotal:</span>
+              <span>+{newSubtotal.toFixed(2)}</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex justify-between">
+            <span>Total:</span>
+            <span>{Math.abs(sale.subTotal.toNumber()).toFixed(2)}</span>
+          </div>
+        )}
         {sale.discount && sale.discount.toNumber() !== 0 && (
           <div className="flex justify-between">
             <span>Discount:</span>
@@ -175,7 +248,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         )}
         <div className="flex justify-between font-bold border-t border-black border-dashed pt-1 mt-1">
           <span>Net Amount:</span>
-          <span className="border border-black px-1">{Math.abs(sale.grandTotal.toNumber()).toFixed(2)}</span>
+          <span className="border border-black px-1">{sale.grandTotal.toNumber().toFixed(2)}</span>
         </div>
 
         {/* Payment splits and return details */}
@@ -226,6 +299,14 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                     <span>{change.toFixed(2)}</span>
                   </div>
                 )}
+                <div className="flex justify-between font-semibold border-t border-dashed border-black pt-1 mt-1">
+                  <span>Previous Due:</span>
+                  <span>{previousDue.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-[11px]">
+                  <span>Total Due:</span>
+                  <span>{(previousDue + (due > 0 ? due : 0)).toFixed(2)}</span>
+                </div>
               </div>
             );
           })()

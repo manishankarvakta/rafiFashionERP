@@ -9,6 +9,7 @@ interface AccountsReceivablePageProps {
     aging?: string;
   }>;
 }
+// 
 
 export default async function AccountsReceivablePage({ searchParams }: AccountsReceivablePageProps) {
   const params = await searchParams;
