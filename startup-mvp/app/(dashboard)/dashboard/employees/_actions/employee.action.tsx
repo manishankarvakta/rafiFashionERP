@@ -206,9 +206,17 @@ export async function getEmployees(
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [
+        {
+          biometricDeviceId: {
+            sort: "asc",
+            nulls: "last",
+          },
+        },
+        {
+          createdAt: "desc",
+        },
+      ],
     });
 
     const totalPages = Math.ceil(total / limit);
