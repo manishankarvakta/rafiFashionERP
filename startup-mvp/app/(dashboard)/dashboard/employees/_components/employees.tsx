@@ -744,45 +744,33 @@ export default function EmployeesListClient({
           </div>
 
           {/* Tenure Filter */}
-          <div className="flex items-center gap-1.5">
-            <div className="w-[180px]">
-              <Select
-                value={tenure}
-                onValueChange={(val) => {
-                  if (val === "custom") {
-                    setCustomTenureOpen(true);
-                  } else {
-                    handleFilterChange("tenure", val);
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Tenures" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Tenures</SelectItem>
-                  <SelectItem value="under_3m">Joined &lt; 3 Months</SelectItem>
-                  <SelectItem value="3m_6m">Joined 3 - 6 Months</SelectItem>
-                  <SelectItem value="6m_1y">Joined 6 - 12 Months</SelectItem>
-                  <SelectItem value="over_1y">Joined &gt; 1 Year</SelectItem>
-                  <SelectItem value="custom">
-                    {tenure === "custom" && (minMonths !== undefined || maxMonths !== undefined)
-                      ? `Custom: ${minMonths ?? 0} - ${maxMonths ?? "∞"} Months`
-                      : "Custom Range..."}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              onClick={() => setCustomTenureOpen(true)}
-              title="Custom Tenure Range"
-              type="button"
+          <div className="w-[180px]">
+            <Select
+              value={tenure}
+              onValueChange={(val) => {
+                if (val === "custom") {
+                  setCustomTenureOpen(true);
+                } else {
+                  handleFilterChange("tenure", val);
+                }
+              }}
             >
-              <FiPlus className="h-4 w-4" />
-            </Button>
+              <SelectTrigger>
+                <SelectValue placeholder="All Tenures" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tenures</SelectItem>
+                <SelectItem value="under_3m">Joined &lt; 3 Months</SelectItem>
+                <SelectItem value="3m_6m">Joined 3 - 6 Months</SelectItem>
+                <SelectItem value="6m_1y">Joined 6 - 12 Months</SelectItem>
+                <SelectItem value="over_1y">Joined &gt; 1 Year</SelectItem>
+                <SelectItem value="custom">
+                  {tenure === "custom" && (minMonths !== undefined || maxMonths !== undefined)
+                    ? `Custom: ${minMonths ?? 0} - ${maxMonths ?? "∞"} Months`
+                    : "Custom Range..."}
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Salary Filter Popover */}
