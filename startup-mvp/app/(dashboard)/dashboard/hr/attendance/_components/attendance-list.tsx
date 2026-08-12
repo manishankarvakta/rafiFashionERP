@@ -451,6 +451,7 @@ export default function AttendanceListClient({
               <SelectContent className="max-h-[250px]">
                 <SelectItem value="ALL">All Statuses</SelectItem>
                 <SelectItem value="ON_DUTY">Still on duty</SelectItem>
+                <SelectItem value="OVERTIME">Overtime</SelectItem>
                 <SelectItem value="PRESENT">Present</SelectItem>
                 <SelectItem value="ABSENT">Absent</SelectItem>
                 <SelectItem value="LATE">Late</SelectItem>

@@ -1,5 +1,5 @@
 import React from "react";
-import { getEmployees, getEmployeeStats } from "./_actions/employee.action";
+import { getEmployees, getEmployeeStats, getUniqueSalaries } from "./_actions/employee.action";
 import { getEmployeeTypes } from "./types/_actions/employee-type.action";
 import { getDepartments } from "./departments/_actions/department.action";
 import { getDesignations } from "./designations/_actions/designation.action";
@@ -35,6 +35,7 @@ interface EmployeesPageProps {
     tenure?: string;
     minMonths?: string;
     maxMonths?: string;
+    exactSalary?: string;
   }>;
 }
 
@@ -55,6 +56,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const tenure = params.tenure || "all";
   const minMonths = params.minMonths ? parseInt(params.minMonths, 10) : undefined;
   const maxMonths = params.maxMonths ? parseInt(params.maxMonths, 10) : undefined;
+  const exactSalary = params.exactSalary ? parseFloat(params.exactSalary) : undefined;
 
   const session = await auth();
   const userId = session?.user?.id;
@@ -62,8 +64,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const status = tab === "trash" ? "trash" : (statusParam as any);
   
   // Check permissions and fetch data concurrently
-  const [result, statsResult, typesResult, departmentsResult, designationsResult, floorsResult, linesResult, allSkills, canView, canEdit, canCreate, canMoveToTrash, canDeletePermanently, canViewLedger] = await Promise.all([
-    getEmployees(page, limit, search, status, employeeTypeId, gender, departmentId, designationId, floorId, lineId, skill, tenure, minMonths, maxMonths),
+  const [result, statsResult, typesResult, departmentsResult, designationsResult, floorsResult, linesResult, allSkills, uniqueSalariesResult, canView, canEdit, canCreate, canMoveToTrash, canDeletePermanently, canViewLedger] = await Promise.all([
+    getEmployees(page, limit, search, status, employeeTypeId, gender, departmentId, designationId, floorId, lineId, skill, tenure, minMonths, maxMonths, exactSalary),
     getEmployeeStats(),
     getEmployeeTypes(1, 100, "", "active"),
     getDepartments(1, 100, "", "active"),
@@ -71,6 +73,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
     getFloors(1, 100, "", "active"),
     getLines(1, 100, "", "active"),
     getAllEmployeeSkills(),
+    getUniqueSalaries(),
     userId ? hasPermission(userId, "peoples.employees", "view") : false,
     userId ? hasPermission(userId, "peoples.employees", "edit") : false,
     userId ? hasPermission(userId, "peoples.employees", "create") : false,
@@ -213,6 +216,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               tenure={tenure}
               minMonths={minMonths}
               maxMonths={maxMonths}
+              exactSalary={exactSalary}
+              salarySuggestions={uniqueSalariesResult.success && uniqueSalariesResult.data ? (uniqueSalariesResult.data as number[]) : []}
               permissions={{
                 view: canView,
                 edit: canEdit,
@@ -252,6 +257,8 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               tenure={tenure}
               minMonths={minMonths}
               maxMonths={maxMonths}
+              exactSalary={exactSalary}
+              salarySuggestions={uniqueSalariesResult.success && uniqueSalariesResult.data ? (uniqueSalariesResult.data as number[]) : []}
               permissions={{
                 view: canView,
                 edit: canEdit,

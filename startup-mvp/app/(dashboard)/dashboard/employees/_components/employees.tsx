@@ -31,6 +31,7 @@ import {
 import Link from "next/link";
 import { FiSearch, FiEdit, FiTrash2, FiX, FiCircle, FiCheck, FiMoreVertical, FiEye, FiRotateCw, FiImage, FiBook, FiPlus } from "react-icons/fi";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { deleteEmployee, bulkUpdateEmployeeStatus, deleteEmployeesPermanently } from "../_actions/employee.action";
 import ProtectedAction from "@/components/permissions/protected-action";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -156,6 +157,8 @@ interface EmployeesListClientProps {
   tenure?: string;
   minMonths?: number;
   maxMonths?: number;
+  exactSalary?: number;
+  salarySuggestions?: number[];
   permissions?: {
     view: boolean;
     edit: boolean;
@@ -189,6 +192,8 @@ export default function EmployeesListClient({
   tenure = "all",
   minMonths,
   maxMonths,
+  exactSalary,
+  salarySuggestions = [],
   permissions,
 }: EmployeesListClientProps) {
   const router = useRouter();
@@ -197,11 +202,16 @@ export default function EmployeesListClient({
   const [customTenureOpen, setCustomTenureOpen] = useState(false);
   const [customMin, setCustomMin] = useState(minMonths?.toString() || "");
   const [customMax, setCustomMax] = useState(maxMonths?.toString() || "");
+  const [salaryInput, setSalaryInput] = useState(exactSalary?.toString() || "");
 
   useEffect(() => {
     setCustomMin(minMonths?.toString() || "");
     setCustomMax(maxMonths?.toString() || "");
   }, [minMonths, maxMonths]);
+
+  useEffect(() => {
+    setSalaryInput(exactSalary?.toString() || "");
+  }, [exactSalary]);
   const hasActiveFilters = !!(
     search || 
     (employeeTypeId && employeeTypeId !== "all") || 
@@ -212,7 +222,8 @@ export default function EmployeesListClient({
     (floorId && floorId !== "all") ||
     (lineId && lineId !== "all") ||
     (skill && skill !== "all") ||
-    (tenure && tenure !== "all")
+    (tenure && tenure !== "all") ||
+    !!exactSalary
   );
   const [deleteEmployeeId, setDeleteEmployeeId] = useState<string | null>(null);
   const [restoreEmployeeId, setRestoreEmployeeId] = useState<string | null>(null);
@@ -773,6 +784,77 @@ export default function EmployeesListClient({
               <FiPlus className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* Salary Filter Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-9 px-3 text-xs flex items-center gap-1.5 border-dashed"
+                type="button"
+              >
+                <span>Salary: {exactSalary ? `${exactSalary.toLocaleString()} Tk` : "All"}</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[280px] p-4 space-y-4" align="start">
+              <div className="space-y-1.5">
+                <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Custom Exact Salary</h4>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    placeholder="e.g. 15000"
+                    value={salaryInput}
+                    onChange={(e) => setSalaryInput(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => handleFilterChange("exactSalary", salaryInput)}
+                    className="text-xs h-9"
+                    type="button"
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+
+              {salarySuggestions.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Payroll Suggestions</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {salarySuggestions.map((s) => (
+                      <Button
+                        key={s}
+                        variant="secondary"
+                        className="h-6 text-[10px] px-2 rounded-full font-medium"
+                        type="button"
+                        onClick={() => {
+                          setSalaryInput(String(s));
+                          handleFilterChange("exactSalary", String(s));
+                        }}
+                      >
+                        {s.toLocaleString()} Tk
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {exactSalary && (
+                <Button
+                  variant="ghost"
+                  className="w-full text-center text-rose-500 text-xs h-8 hover:bg-rose-50"
+                  type="button"
+                  onClick={() => {
+                    setSalaryInput("");
+                    handleFilterChange("exactSalary", "");
+                  }}
+                >
+                  Clear Filter
+                </Button>
+              )}
+            </PopoverContent>
+          </Popover>
 
           {/* Gender Filter */}
           <div className="w-[140px]">

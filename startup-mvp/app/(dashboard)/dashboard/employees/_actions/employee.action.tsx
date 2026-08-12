@@ -27,7 +27,8 @@ export async function getEmployees(
   skill?: string,
   tenure?: string,
   minMonths?: number,
-  maxMonths?: number
+  maxMonths?: number,
+  exactSalary?: number
 ) {
   try {
     const session = await auth();
@@ -141,6 +142,9 @@ export async function getEmployees(
           where.joiningDate = { lt: oneYearAgo };
         }
       }
+    }
+    if (exactSalary !== undefined && exactSalary > 0) {
+      where.salary = exactSalary;
     }
 
     // Get total count
@@ -2469,5 +2473,32 @@ export async function getAllEmployeeSkills(): Promise<string[]> {
   } catch (error) {
     console.error("getAllEmployeeSkills error:", error);
     return [];
+  }
+}
+
+export async function getUniqueSalaries() {
+  try {
+    const session = await auth();
+    if (!session?.user) return { success: false, data: [] };
+
+    const groups = await prisma.employee.groupBy({
+      by: ['salary'],
+      where: {
+        status: "active",
+        salary: { not: null }
+      },
+      orderBy: {
+        salary: 'desc'
+      },
+      take: 5
+    });
+
+    return {
+      success: true,
+      data: groups.map(g => g.salary ? Number(g.salary) : 0).filter(Boolean)
+    };
+  } catch (e: any) {
+    console.error("getUniqueSalaries error:", e);
+    return { success: false, data: [] };
   }
 }

@@ -605,6 +605,8 @@ export async function getAttendanceRecordsPaginated({
       if (status === "ON_DUTY") {
         where.checkIn = { not: null };
         where.checkOut = null;
+      } else if (status === "OVERTIME") {
+        where.otHours = { gt: 0 };
       } else {
         where.status = status as any;
       }
