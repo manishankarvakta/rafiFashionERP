@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Link from "next/link";
-import { FiSearch, FiEdit, FiTrash2, FiX, FiCircle, FiCheck, FiMoreVertical, FiEye, FiRotateCw, FiImage, FiBook } from "react-icons/fi";
+import { FiSearch, FiEdit, FiTrash2, FiX, FiCircle, FiCheck, FiMoreVertical, FiEye, FiRotateCw, FiImage, FiBook, FiPlus } from "react-icons/fi";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { deleteEmployee, bulkUpdateEmployeeStatus, deleteEmployeesPermanently } from "../_actions/employee.action";
 import ProtectedAction from "@/components/permissions/protected-action";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -152,6 +153,9 @@ interface EmployeesListClientProps {
   lineId?: string;
   allSkills?: string[];
   skill?: string;
+  tenure?: string;
+  minMonths?: number;
+  maxMonths?: number;
   permissions?: {
     view: boolean;
     edit: boolean;
@@ -182,11 +186,22 @@ export default function EmployeesListClient({
   lineId = "all",
   allSkills = [],
   skill = "all",
+  tenure = "all",
+  minMonths,
+  maxMonths,
   permissions,
 }: EmployeesListClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(initialSearch);
+  const [customTenureOpen, setCustomTenureOpen] = useState(false);
+  const [customMin, setCustomMin] = useState(minMonths?.toString() || "");
+  const [customMax, setCustomMax] = useState(maxMonths?.toString() || "");
+
+  useEffect(() => {
+    setCustomMin(minMonths?.toString() || "");
+    setCustomMax(maxMonths?.toString() || "");
+  }, [minMonths, maxMonths]);
   const hasActiveFilters = !!(
     search || 
     (employeeTypeId && employeeTypeId !== "all") || 
@@ -196,7 +211,8 @@ export default function EmployeesListClient({
     (designationId && designationId !== "all") ||
     (floorId && floorId !== "all") ||
     (lineId && lineId !== "all") ||
-    (skill && skill !== "all")
+    (skill && skill !== "all") ||
+    (tenure && tenure !== "all")
   );
   const [deleteEmployeeId, setDeleteEmployeeId] = useState<string | null>(null);
   const [restoreEmployeeId, setRestoreEmployeeId] = useState<string | null>(null);
@@ -326,6 +342,10 @@ export default function EmployeesListClient({
       params.set(key, value);
     } else {
       params.delete(key);
+    }
+    if (key === "tenure" && value !== "custom") {
+      params.delete("minMonths");
+      params.delete("maxMonths");
     }
     params.set("page", "1");
     router.push(`/dashboard/employees?${params.toString()}`);
@@ -712,6 +732,48 @@ export default function EmployeesListClient({
             </Select>
           </div>
 
+          {/* Tenure Filter */}
+          <div className="flex items-center gap-1.5">
+            <div className="w-[180px]">
+              <Select
+                value={tenure}
+                onValueChange={(val) => {
+                  if (val === "custom") {
+                    setCustomTenureOpen(true);
+                  } else {
+                    handleFilterChange("tenure", val);
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Tenures" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tenures</SelectItem>
+                  <SelectItem value="under_3m">Joined &lt; 3 Months</SelectItem>
+                  <SelectItem value="3m_6m">Joined 3 - 6 Months</SelectItem>
+                  <SelectItem value="6m_1y">Joined 6 - 12 Months</SelectItem>
+                  <SelectItem value="over_1y">Joined &gt; 1 Year</SelectItem>
+                  <SelectItem value="custom">
+                    {tenure === "custom" && (minMonths !== undefined || maxMonths !== undefined)
+                      ? `Custom: ${minMonths ?? 0} - ${maxMonths ?? "∞"} Months`
+                      : "Custom Range..."}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              onClick={() => setCustomTenureOpen(true)}
+              title="Custom Tenure Range"
+              type="button"
+            >
+              <FiPlus className="h-4 w-4" />
+            </Button>
+          </div>
+
           {/* Gender Filter */}
           <div className="w-[140px]">
             <Select
@@ -1015,6 +1077,77 @@ export default function EmployeesListClient({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Custom Tenure Dialog */}
+      <Dialog open={customTenureOpen} onOpenChange={setCustomTenureOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Custom Tenure Range</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              Enter the duration in months to filter employees. Leave blank for no limit.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">
+                  Minimum Months (Tenure)
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 3"
+                  value={customMin}
+                  onChange={(e) => setCustomMin(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">
+                  Maximum Months (Tenure)
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 6"
+                  value={customMax}
+                  onChange={(e) => setCustomMax(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCustomTenureOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const params = new URLSearchParams(searchParams.toString());
+                params.set("tenure", "custom");
+                if (customMin && parseInt(customMin, 10) > 0) {
+                  params.set("minMonths", customMin);
+                } else {
+                  params.delete("minMonths");
+                }
+                if (customMax && parseInt(customMax, 10) > 0) {
+                  params.set("maxMonths", customMax);
+                } else {
+                  params.delete("maxMonths");
+                }
+                params.set("page", "1");
+                setCustomTenureOpen(false);
+                router.push(`/dashboard/employees?${params.toString()}`);
+              }}
+            >
+              Apply Filter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

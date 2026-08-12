@@ -32,6 +32,9 @@ interface EmployeesPageProps {
     lineId?: string;
     skill?: string;
     limit?: string;
+    tenure?: string;
+    minMonths?: string;
+    maxMonths?: string;
   }>;
 }
 
@@ -49,6 +52,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   const floorId = params.floorId || "all";
   const lineId = params.lineId || "all";
   const skill = params.skill || "all";
+  const tenure = params.tenure || "all";
+  const minMonths = params.minMonths ? parseInt(params.minMonths, 10) : undefined;
+  const maxMonths = params.maxMonths ? parseInt(params.maxMonths, 10) : undefined;
 
   const session = await auth();
   const userId = session?.user?.id;
@@ -57,7 +63,7 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
   
   // Check permissions and fetch data concurrently
   const [result, statsResult, typesResult, departmentsResult, designationsResult, floorsResult, linesResult, allSkills, canView, canEdit, canCreate, canMoveToTrash, canDeletePermanently, canViewLedger] = await Promise.all([
-    getEmployees(page, limit, search, status, employeeTypeId, gender, departmentId, designationId, floorId, lineId, skill),
+    getEmployees(page, limit, search, status, employeeTypeId, gender, departmentId, designationId, floorId, lineId, skill, tenure, minMonths, maxMonths),
     getEmployeeStats(),
     getEmployeeTypes(1, 100, "", "active"),
     getDepartments(1, 100, "", "active"),
@@ -204,6 +210,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               lineId={lineId}
               allSkills={allSkills || []}
               skill={skill}
+              tenure={tenure}
+              minMonths={minMonths}
+              maxMonths={maxMonths}
               permissions={{
                 view: canView,
                 edit: canEdit,
@@ -240,6 +249,9 @@ export default async function EmployeesPage({ searchParams }: EmployeesPageProps
               lineId={lineId}
               allSkills={allSkills || []}
               skill={skill}
+              tenure={tenure}
+              minMonths={minMonths}
+              maxMonths={maxMonths}
               permissions={{
                 view: canView,
                 edit: canEdit,

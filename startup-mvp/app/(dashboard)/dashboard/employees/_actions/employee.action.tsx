@@ -24,7 +24,10 @@ export async function getEmployees(
   designationId?: string,
   floorId?: string,
   lineId?: string,
-  skill?: string
+  skill?: string,
+  tenure?: string,
+  minMonths?: number,
+  maxMonths?: number
 ) {
   try {
     const session = await auth();
@@ -100,6 +103,44 @@ export async function getEmployees(
       where.skills = {
         array_contains: skill
       };
+    }
+    if (tenure && tenure !== "all") {
+      const now = new Date();
+      if (tenure === "custom") {
+        const dateFilter: any = {};
+        if (minMonths !== undefined && minMonths > 0) {
+          const maxJoiningDate = new Date();
+          maxJoiningDate.setMonth(now.getMonth() - minMonths);
+          dateFilter.lte = maxJoiningDate;
+        }
+        if (maxMonths !== undefined && maxMonths > 0) {
+          const minJoiningDate = new Date();
+          minJoiningDate.setMonth(now.getMonth() - maxMonths);
+          dateFilter.gte = minJoiningDate;
+        }
+        if (Object.keys(dateFilter).length > 0) {
+          where.joiningDate = dateFilter;
+        }
+      } else {
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(now.getMonth() - 3);
+
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(now.getMonth() - 6);
+
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(now.getFullYear() - 1);
+
+        if (tenure === "under_3m") {
+          where.joiningDate = { gte: threeMonthsAgo };
+        } else if (tenure === "3m_6m") {
+          where.joiningDate = { gte: sixMonthsAgo, lt: threeMonthsAgo };
+        } else if (tenure === "6m_1y") {
+          where.joiningDate = { gte: oneYearAgo, lt: sixMonthsAgo };
+        } else if (tenure === "over_1y") {
+          where.joiningDate = { lt: oneYearAgo };
+        }
+      }
     }
 
     // Get total count
