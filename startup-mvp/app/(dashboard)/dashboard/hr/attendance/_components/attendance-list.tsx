@@ -29,6 +29,7 @@ import { getDepartments } from "../../../employees/departments/_actions/departme
 import { getDesignations } from "../../../employees/designations/_actions/designation.action";
 import { getFloors } from "../../../employees/floors/_actions/floor.action";
 import { getLines } from "../../../employees/lines/_actions/line.action";
+import { getEmployeeTypes } from "../../../employees/types/_actions/employee-type.action";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -100,6 +101,7 @@ interface AttendanceListClientProps {
     floorId?: string;
     lineId?: string;
     skill?: string;
+    employeeTypeId?: string;
   };
   permissions?: {
     view: boolean;
@@ -142,6 +144,7 @@ export default function AttendanceListClient({
   const [designations, setDesignations] = useState<{id: string, name: string}[]>([]);
   const [floors, setFloors] = useState<{id: string, name: string}[]>([]);
   const [lines, setLines] = useState<{id: string, name: string}[]>([]);
+  const [employeeTypes, setEmployeeTypes] = useState<{id: string, name: string}[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
@@ -191,7 +194,7 @@ export default function AttendanceListClient({
 
   useEffect(() => {
     async function loadDropdowns() {
-      const [whRes, empRes, deptRes, desigRes, floorRes, lineRes, skillRes] = await Promise.all([
+      const [whRes, empRes, deptRes, desigRes, floorRes, lineRes, skillRes, typeRes] = await Promise.all([
         getWarehouses(1, 100),
         getEmployees(1, 1000),
         getDepartments(1, 100, "", "active"),
@@ -199,6 +202,7 @@ export default function AttendanceListClient({
         getFloors(1, 100, "", "active"),
         getLines(1, 100, "", "active"),
         getAllEmployeeSkills(),
+        getEmployeeTypes(1, 100, "", "active"),
       ]);
       if (whRes.success && whRes.warehouses) setWarehouses(whRes.warehouses);
       if (empRes.success && empRes.employees) setEmployees(empRes.employees);
@@ -207,6 +211,7 @@ export default function AttendanceListClient({
       if (floorRes.success && floorRes.floors) setFloors(floorRes.floors as any);
       if (lineRes.success && lineRes.lines) setLines(lineRes.lines as any);
       if (Array.isArray(skillRes)) setSkills(skillRes);
+      if (typeRes.success && typeRes.employeeTypes) setEmployeeTypes(typeRes.employeeTypes as any);
     }
     loadDropdowns();
   }, []);
@@ -335,6 +340,7 @@ export default function AttendanceListClient({
     if (updated.floorId && updated.floorId !== "all") params.set("floorId", updated.floorId);
     if (updated.lineId && updated.lineId !== "all") params.set("lineId", updated.lineId);
     if (updated.skill && updated.skill !== "all") params.set("skill", updated.skill);
+    if (updated.employeeTypeId && updated.employeeTypeId !== "all") params.set("employeeTypeId", updated.employeeTypeId);
 
     // Keep active limit
     if (updated.limit) params.set("limit", updated.limit.toString());
@@ -348,7 +354,7 @@ export default function AttendanceListClient({
     const todayStr = format(new Date(), "yyyy-MM-dd");
     setLocalFilters({ 
       page: 1, limit: 20, search: "", warehouseId: "", deviceId: "", employeeId: "", status: "ALL", 
-      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "" 
+      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "", employeeTypeId: ""
     });
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}&limit=20`);
@@ -440,6 +446,19 @@ export default function AttendanceListClient({
           </div>
 
           <div className="space-y-1.5 flex-1 min-w-[160px]">
+            <label className="text-xs font-semibold text-muted-foreground">Employee Type</label>
+            <SearchableSelect 
+              value={localFilters.employeeTypeId || "all"} 
+              onValueChange={(val) => pushFilters({ employeeTypeId: val || "all" })}
+              placeholder="All Types"
+              options={[
+                { value: "all", label: "All Types" },
+                ...employeeTypes.map(t => ({ value: t.id, label: t.name }))
+              ]}
+            />
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[160px]">
             <label className="text-xs font-semibold text-muted-foreground">Status</label>
             <Select 
               value={localFilters.status || "ALL"} 
@@ -451,6 +470,7 @@ export default function AttendanceListClient({
               <SelectContent className="max-h-[250px]">
                 <SelectItem value="ALL">All Statuses</SelectItem>
                 <SelectItem value="ON_DUTY">Still on duty</SelectItem>
+                <SelectItem value="UNPUNCHED">Unpunched (Shift Started)</SelectItem>
                 <SelectItem value="OVERTIME">Overtime</SelectItem>
                 <SelectItem value="PRESENT">Present</SelectItem>
                 <SelectItem value="ABSENT">Absent</SelectItem>
