@@ -567,6 +567,7 @@ export async function getAttendanceRecordsPaginated({
   floorId,
   lineId,
   skill,
+  employeeTypeId = "all",
 }: {
   page?: number;
   limit?: number;
@@ -582,6 +583,7 @@ export async function getAttendanceRecordsPaginated({
   floorId?: string;
   lineId?: string;
   skill?: string;
+  employeeTypeId?: string;
 }) {
   try {
     const session = await auth();
@@ -619,6 +621,7 @@ export async function getAttendanceRecordsPaginated({
     if (floorId && floorId !== "all") employeeConditions.floorId = floorId;
     if (lineId && lineId !== "all") employeeConditions.lineId = lineId;
     if (skill && skill !== "all") employeeConditions.skills = { array_contains: skill };
+    if (employeeTypeId && employeeTypeId !== "all") employeeConditions.employeeTypeId = employeeTypeId;
 
     // Search by employee name, code, or device ID
     if (search) {
@@ -631,6 +634,101 @@ export async function getAttendanceRecordsPaginated({
 
     if (Object.keys(employeeConditions).length > 0) {
       where.employee = employeeConditions;
+    }
+
+    if (status === "UNPUNCHED") {
+      const targetDate = fromDate 
+        ? new Date(fromDate + "T00:00:00.000Z") 
+        : new Date(new Date().toISOString().split('T')[0] + "T00:00:00.000Z");
+
+      const checkedInAttendance = await prisma.attendance.findMany({
+        where: {
+          date: targetDate,
+          checkIn: { not: null }
+        },
+        select: { employeeId: true }
+      });
+      const checkedInEmployeeIds = checkedInAttendance.map(a => a.employeeId);
+
+      const employeeWhere: Prisma.EmployeeWhereInput = {
+        status: "active",
+        shiftId: { not: null },
+        id: { notIn: checkedInEmployeeIds },
+        ...employeeConditions
+      };
+
+      const candidates = await prisma.employee.findMany({
+        where: employeeWhere,
+        include: { 
+          shift: true
+        }
+      });
+
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+      const targetDateStr = targetDate.toISOString().split('T')[0];
+
+      const unpunchedEmployees = candidates.filter(emp => {
+        const anyEmp = emp as any;
+        if (!anyEmp.shift) return false;
+        
+        const { shiftStartDateTime } = getShiftWindow(targetDate, anyEmp.shift);
+        
+        if (targetDateStr === todayStr) {
+          return now >= shiftStartDateTime;
+        } else if (targetDateStr < todayStr) {
+          return true;
+        } else {
+          return false;
+        }
+      });
+
+      const virtualAttendances = unpunchedEmployees.map(emp => {
+        const anyEmp = emp as any;
+        return {
+          id: `virtual-${anyEmp.id}`,
+          employeeId: anyEmp.id,
+          date: targetDate,
+          checkIn: null,
+          checkOut: null,
+          status: "ABSENT" as const,
+          otHours: new Prisma.Decimal(0),
+          isManual: false,
+          notes: "Shift started but no punch recorded yet",
+          employee: {
+            id: anyEmp.id,
+            name: anyEmp.name,
+            employeeCode: anyEmp.employeeCode,
+            designation: anyEmp.designation,
+            biometricDeviceId: anyEmp.biometricDeviceId
+          },
+          shift: anyEmp.shift ? {
+            id: anyEmp.shift.id,
+            name: anyEmp.shift.name,
+            startTime: anyEmp.shift.startTime,
+            endTime: anyEmp.shift.endTime,
+            breakStartTime: anyEmp.shift.breakStartTime,
+            breakEndTime: anyEmp.shift.breakEndTime,
+            breakType: anyEmp.shift.breakType,
+            breakDuration: anyEmp.shift.breakDuration
+          } : null
+        };
+      });
+
+      const total = virtualAttendances.length;
+      const skip = (page - 1) * limit;
+      const paginatedAttendances = virtualAttendances.slice(skip, skip + limit);
+
+      return {
+        success: true,
+        attendances: paginatedAttendances as any[],
+        pagination: {
+          total,
+          pages: Math.ceil(total / limit),
+          page,
+          limit
+        }
+      };
     }
 
     // Pagination
