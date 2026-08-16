@@ -26,6 +26,7 @@ interface AttendancePageProps {
     lineId?: string;
     skill?: string;
     employeeTypeId?: string;
+    sortBy?: string;
   }>;
 }
 
@@ -44,6 +45,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
   const lineId = params.lineId || undefined;
   const skill = params.skill || undefined;
   const employeeTypeId = params.employeeTypeId || undefined;
+  const sortBy = params.sortBy || "punch_latest";
   
   // Set default date range if not provided (e.g. today)
   const today = new Date().toISOString().split("T")[0];
@@ -72,6 +74,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
       lineId,
       skill,
       employeeTypeId,
+      sortBy,
     }),
     userId ? hasPermission(userId, "hr.attendance", "view") : false,
     userId ? hasPermission(userId, "hr.attendance", "edit") : false,
@@ -143,6 +146,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
           lineId: lineId || "",
           skill: skill || "",
           employeeTypeId: employeeTypeId || "all",
+          sortBy,
         }}
         permissions={{
           view: canView,

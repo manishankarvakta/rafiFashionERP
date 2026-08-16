@@ -568,6 +568,7 @@ export async function getAttendanceRecordsPaginated({
   lineId,
   skill,
   employeeTypeId = "all",
+  sortBy = "punch_latest",
 }: {
   page?: number;
   limit?: number;
@@ -584,6 +585,7 @@ export async function getAttendanceRecordsPaginated({
   lineId?: string;
   skill?: string;
   employeeTypeId?: string;
+  sortBy?: string;
 }) {
   try {
     const session = await auth();
@@ -683,6 +685,26 @@ export async function getAttendanceRecordsPaginated({
         }
       });
 
+      if (sortBy === "biometric_asc") {
+        unpunchedEmployees.sort((a, b) => {
+          const idA = a.biometricDeviceId || "";
+          const idB = b.biometricDeviceId || "";
+          if (!idA) return 1;
+          if (!idB) return -1;
+          return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      } else if (sortBy === "biometric_desc") {
+        unpunchedEmployees.sort((a, b) => {
+          const idA = a.biometricDeviceId || "";
+          const idB = b.biometricDeviceId || "";
+          if (!idA) return 1;
+          if (!idB) return -1;
+          return idB.localeCompare(idA, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      } else {
+        unpunchedEmployees.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
       const virtualAttendances = unpunchedEmployees.map(emp => {
         const anyEmp = emp as any;
         return {
@@ -734,19 +756,28 @@ export async function getAttendanceRecordsPaginated({
     // Pagination
     const skip = (page - 1) * limit;
 
-    const [total, attendances] = await prisma.$transaction([
-      prisma.attendance.count({ where }),
-      prisma.attendance.findMany({
-        where,
-        include: {
-          employee: { select: { id: true, name: true, employeeCode: true, designation: true, biometricDeviceId: true } },
-          shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
-        },
-        orderBy: [{ date: 'desc' }, { employee: { name: 'asc' } }],
-        skip,
-        take: limit,
-      })
-    ]);
+        let orderBy: Prisma.AttendanceOrderByWithRelationInput[] = [{ date: 'desc' }];
+        if (sortBy === "biometric_asc") {
+          orderBy.push({ employee: { biometricDeviceId: 'asc' } });
+        } else if (sortBy === "biometric_desc") {
+          orderBy.push({ employee: { biometricDeviceId: 'desc' } });
+        } else {
+          orderBy.push({ checkIn: { sort: 'desc', nulls: 'last' } });
+        }
+
+        const [total, attendances] = await prisma.$transaction([
+          prisma.attendance.count({ where }),
+          prisma.attendance.findMany({
+            where,
+            include: {
+              employee: { select: { id: true, name: true, employeeCode: true, designation: true, biometricDeviceId: true } },
+              shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
+            },
+            orderBy,
+            skip,
+            take: limit,
+          })
+        ]);
 
     return {
       success: true,

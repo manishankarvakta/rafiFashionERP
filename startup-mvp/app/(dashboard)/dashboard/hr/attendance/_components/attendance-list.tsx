@@ -102,6 +102,7 @@ interface AttendanceListClientProps {
     lineId?: string;
     skill?: string;
     employeeTypeId?: string;
+    sortBy?: string;
   };
   permissions?: {
     view: boolean;
@@ -341,6 +342,7 @@ export default function AttendanceListClient({
     if (updated.lineId && updated.lineId !== "all") params.set("lineId", updated.lineId);
     if (updated.skill && updated.skill !== "all") params.set("skill", updated.skill);
     if (updated.employeeTypeId && updated.employeeTypeId !== "all") params.set("employeeTypeId", updated.employeeTypeId);
+    if (updated.sortBy && updated.sortBy !== "punch_latest") params.set("sortBy", updated.sortBy);
 
     // Keep active limit
     if (updated.limit) params.set("limit", updated.limit.toString());
@@ -354,7 +356,7 @@ export default function AttendanceListClient({
     const todayStr = format(new Date(), "yyyy-MM-dd");
     setLocalFilters({ 
       page: 1, limit: 20, search: "", warehouseId: "", deviceId: "", employeeId: "", status: "ALL", 
-      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "", employeeTypeId: ""
+      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "", employeeTypeId: "", sortBy: "punch_latest"
     });
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}&limit=20`);
@@ -479,6 +481,23 @@ export default function AttendanceListClient({
                 <SelectItem value="LEAVE">Leave</SelectItem>
                 <SelectItem value="HOLIDAY">Holiday</SelectItem>
                 <SelectItem value="WEEKEND">Weekend</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5 flex-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-muted-foreground">Sort By</label>
+            <Select 
+              value={localFilters.sortBy || "punch_latest"} 
+              onValueChange={(val) => pushFilters({ sortBy: val })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Sort By" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="punch_latest">Latest Punch First (Default)</SelectItem>
+                <SelectItem value="biometric_asc">Biometric ID (Small to Large)</SelectItem>
+                <SelectItem value="biometric_desc">Biometric ID (Large to Small)</SelectItem>
               </SelectContent>
             </Select>
           </div>
