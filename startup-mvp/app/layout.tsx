@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     apple: "/site-icon.png",
   },
 };
-
+// 
 export default function RootLayout({
   children,
 }: Readonly<{
