@@ -21,8 +21,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FiSearch, FiCheckSquare, FiAlertCircle, FiEdit } from "react-icons/fi";
-import { processBulkAttendance, processBulkAttendanceRange, closeShiftBulk } from "../_actions/attendance.action";
+import { FiSearch, FiCheckSquare, FiAlertCircle, FiEdit, FiDownload } from "react-icons/fi";
+import { exportToCSV } from "@/lib/utils/export-csv";
+import { processBulkAttendance, processBulkAttendanceRange, closeShiftBulk, getAttendanceRecordsPaginated } from "../_actions/attendance.action";
 import { getWarehouses } from "../../../master/warehouses/_actions/warehouse.action";
 import { getEmployees, getAllEmployeeSkills } from "../../../employees/_actions/employee.action";
 import { getDepartments } from "../../../employees/departments/_actions/department.action";
@@ -121,7 +122,7 @@ const formatHoursMinutes = (decimalHours: any) => {
     m = 0;
   }
   if (h > 0) {
-    return `${h}h ${m}m`;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   }
   return `${m}m`;
 };
@@ -149,6 +150,7 @@ export default function AttendanceListClient({
   const [skills, setSkills] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Clear selections when attendance records change (e.g. after pagination/filtering)
   useEffect(() => {
@@ -362,6 +364,60 @@ export default function AttendanceListClient({
       router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}&limit=20`);
     });
   }, [router]);
+
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+      const res = await getAttendanceRecordsPaginated({
+        ...localFilters,
+        page: 1,
+        limit: 100000,
+      });
+
+      if (!res.success || !res.attendances) {
+        throw new Error(res.error || "Failed to fetch attendance records for export");
+      }
+
+      const csvHeaders = [
+        "Date",
+        "Employee Code",
+        "Employee Name",
+        "Biometric ID",
+        "Shift",
+        "Check In",
+        "Check Out",
+        "Work Hours",
+        "OT Hours",
+        "Status",
+        "Notes"
+      ];
+
+      const dataToExport = res.attendances.map((att: any) => ({
+        "Date": format(new Date(att.date), "yyyy-MM-dd"),
+        "Employee Code": att.employee?.employeeCode || "",
+        "Employee Name": att.employee?.name || "",
+        "Biometric ID": att.employee?.biometricDeviceId || "",
+        "Shift": att.shift?.name || "",
+        "Check In": att.checkIn ? format(new Date(att.checkIn), "hh:mm a") : "--",
+        "Check Out": att.checkOut ? format(new Date(att.checkOut), "hh:mm a") : "--",
+        "Work Hours": att.workHours !== null ? Number(att.workHours).toFixed(2) : "--",
+        "OT Hours": att.otHours !== null ? Number(att.otHours).toFixed(2) : "0.00",
+        "Status": att.status,
+        "Notes": att.notes || ""
+      }));
+
+      exportToCSV(dataToExport, {
+        filename: `attendance-report-${localFilters.fromDate}-to-${localFilters.toDate}.csv`,
+        headers: csvHeaders
+      });
+
+      toast({ title: "Success", description: "Filtered attendance report exported successfully." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: error.message });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
 
   const handleProcessBulk = () => {
@@ -604,6 +660,15 @@ export default function AttendanceListClient({
               disabled={isPending}
             >
               Apply Search
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExportCSV}
+              disabled={isPending || isExporting}
+              className="border-emerald-600 text-emerald-600 hover:bg-emerald-50"
+            >
+              <FiDownload className="mr-2 h-4 w-4" />
+              {isExporting ? "Exporting..." : "Export CSV"}
             </Button>
             {permissions?.edit && (
               <>

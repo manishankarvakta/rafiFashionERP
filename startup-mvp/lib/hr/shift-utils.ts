@@ -321,7 +321,10 @@ export function calculateOTHours(
   
   // Only grant OT if they stayed past the otStartAfter threshold
   if (checkOut >= otStartAfterDateTime) {
-    return Number((diffFromEnd / 60).toFixed(2));
+    const fullHours = Math.floor(diffFromEnd / 60);
+    const remainingMinutes = diffFromEnd % 60;
+    const finalOTHours = fullHours + (remainingMinutes >= 50 ? 1 : 0);
+    return finalOTHours;
   }
   return 0;
 }

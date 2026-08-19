@@ -753,35 +753,70 @@ export async function getAttendanceRecordsPaginated({
       };
     }
 
-    // Pagination
+    // Fetch all matching records (without database-level pagination/sorting)
+    const allAttendances = await prisma.attendance.findMany({
+      where,
+      include: {
+        employee: { select: { id: true, name: true, employeeCode: true, designation: true, biometricDeviceId: true } },
+        shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
+      }
+    });
+
+    // Sort in-memory based on selected criteria
+    if (sortBy === "punch_latest") {
+      allAttendances.sort((a, b) => {
+        // 1. Sort by date descending first
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateB - dateA;
+
+        // 2. Sort by latest activity (maximum of checkIn or checkOut)
+        const punchA = a.checkOut 
+          ? a.checkOut.getTime() 
+          : (a.checkIn ? a.checkIn.getTime() : 0);
+        const punchB = b.checkOut 
+          ? b.checkOut.getTime() 
+          : (b.checkIn ? b.checkIn.getTime() : 0);
+
+        // Put records with no activity (both checkIn and checkOut null) at the bottom
+        if (punchA === 0 && punchB !== 0) return 1;
+        if (punchB === 0 && punchA !== 0) return -1;
+
+        return punchB - punchA; // Descending (latest punch first)
+      });
+    } else if (sortBy === "biometric_asc") {
+      allAttendances.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateB - dateA;
+
+        const idA = a.employee?.biometricDeviceId || "";
+        const idB = b.employee?.biometricDeviceId || "";
+        if (!idA) return 1;
+        if (!idB) return -1;
+        return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    } else if (sortBy === "biometric_desc") {
+      allAttendances.sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateB - dateA;
+
+        const idA = a.employee?.biometricDeviceId || "";
+        const idB = b.employee?.biometricDeviceId || "";
+        if (!idA) return 1;
+        if (!idB) return -1;
+        return idB.localeCompare(idA, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+
+    const total = allAttendances.length;
     const skip = (page - 1) * limit;
-
-        let orderBy: Prisma.AttendanceOrderByWithRelationInput[] = [{ date: 'desc' }];
-        if (sortBy === "biometric_asc") {
-          orderBy.push({ employee: { biometricDeviceId: 'asc' } });
-        } else if (sortBy === "biometric_desc") {
-          orderBy.push({ employee: { biometricDeviceId: 'desc' } });
-        } else {
-          orderBy.push({ checkIn: { sort: 'desc', nulls: 'last' } });
-        }
-
-        const [total, attendances] = await prisma.$transaction([
-          prisma.attendance.count({ where }),
-          prisma.attendance.findMany({
-            where,
-            include: {
-              employee: { select: { id: true, name: true, employeeCode: true, designation: true, biometricDeviceId: true } },
-              shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
-            },
-            orderBy,
-            skip,
-            take: limit,
-          })
-        ]);
+    const paginatedAttendances = allAttendances.slice(skip, skip + limit);
 
     return {
       success: true,
-      attendances,
+      attendances: paginatedAttendances,
       pagination: {
         total,
         pages: Math.ceil(total / limit),
