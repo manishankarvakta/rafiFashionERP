@@ -4,6 +4,7 @@ import { getAccountingOperationSettings } from "../lib/accounting-settings";
 import { formatBusinessDateKey, syncTimezoneFromDb } from "../lib/hr/shift-utils";
 import { Decimal } from "@prisma/client/runtime/library";
 
+// 
 async function runTest() {
   console.log("1. Finding a valid user and employee...");
   const user = await prisma.user.findFirst();
