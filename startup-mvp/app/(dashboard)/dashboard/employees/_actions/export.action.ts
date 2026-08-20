@@ -210,6 +210,8 @@ export async function getSingleEmployeeAttendanceForExport(
         departmentRelation: true,
         employeeType: true,
         shift: true,
+        lineRelation: true,
+        floorRelation: true,
       }
     });
 
@@ -222,6 +224,11 @@ export async function getSingleEmployeeAttendanceForExport(
         employeeId,
         date: { gte: start, lte: end }
       },
+      include: {
+        leaveApplication: {
+          include: { leaveType: true }
+        }
+      },
       orderBy: { date: "asc" }
     });
 
@@ -231,6 +238,8 @@ export async function getSingleEmployeeAttendanceForExport(
       employeeCode: employee.employeeCode,
       designation: employee.designation,
       department: employee.departmentRelation?.name || employee.department || "N/A",
+      section: employee.lineRelation?.name || "N/A",
+      joiningDate: employee.joiningDate ? employee.joiningDate.toISOString() : null,
       employeeType: employee.employeeType?.name || "N/A",
       shift: employee.shift ? {
         id: employee.shift.id,
@@ -238,7 +247,9 @@ export async function getSingleEmployeeAttendanceForExport(
         breakType: employee.shift.breakType,
         breakDuration: employee.shift.breakDuration,
         breakStartTime: employee.shift.breakStartTime,
-        breakEndTime: employee.shift.breakEndTime
+        breakEndTime: employee.shift.breakEndTime,
+        startTime: employee.shift.startTime,
+        endTime: employee.shift.endTime
       } : null
     };
 
@@ -254,6 +265,7 @@ export async function getSingleEmployeeAttendanceForExport(
       breakCheckOut: att.breakCheckOut ? att.breakCheckOut.toISOString() : null,
       breakCheckIn: att.breakCheckIn ? att.breakCheckIn.toISOString() : null,
       breakLateMinutes: att.breakLateMinutes || 0,
+      leavePaidStatus: att.leaveApplication?.leaveType?.isPaid ?? null
     }));
 
     const payrollSettings = await getPayrollSettings();

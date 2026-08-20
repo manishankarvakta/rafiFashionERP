@@ -125,6 +125,7 @@ export const MENU_TEMPLATE: MenuItemData[] = [
     icon: "FiUsers",
     module: "hr",
     subMenu: [
+      { href: "/dashboard/hr", label: "Dashboard", icon: "FiPieChart", module: "hr" },
       { href: "/dashboard/hr/shifts", label: "Shifts", icon: "FiBox", module: "hr" },
       { href: "/dashboard/hr/holidays", label: "Holidays", icon: "FiCalendar", module: "hr" },
       { href: "/dashboard/hr/attendance", label: "Attendance", icon: "FiClipboard", module: "hr" },
