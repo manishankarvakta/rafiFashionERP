@@ -146,7 +146,7 @@ async function runTest() {
     acc[curr.employeeId].push(curr);
     return acc;
   }, {} as Record<string, typeof loans>);
-
+// 
   const approvedFines = await prisma.employeeFine.findMany({
     where: { status: "APPROVED", fineDate: { gte: startDate, lte: endDate } }
   });
