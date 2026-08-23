@@ -256,26 +256,20 @@ export default function ExportSingleAttendance({
       if (formatType === "csv") {
         // CSV Export
         const dataToExport = rows.map((r) => {
-          const rowData: any = {
+          return {
             Date: r.date,
             Day: r.day,
             Status: r.status,
             In: r.checkIn,
             Out: r.checkOut,
+            Delay: r.lateMinutes,
+            Regular: formatDecimalToHHMM(r.workHours),
+            NOT: formatDecimalToHHMM(r.otHours),
+            EOT: formatDecimalToHHMM(r.workHours + r.otHours),
+            Shift: r.shift,
+            Group: r.group,
+            Remarks: r.remarks,
           };
-          if (hasBreaks) {
-            rowData["Break Out"] = r.breakOut;
-            rowData["Break In"] = r.breakIn;
-            rowData["Break Late (m)"] = r.breakLateMinutes;
-          }
-          rowData["Delay"] = r.lateMinutes;
-          rowData["Regular"] = formatDecimalToHHMM(r.workHours);
-          rowData["NOT"] = formatDecimalToHHMM(r.otHours);
-          rowData["EOT"] = formatDecimalToHHMM(r.workHours + r.otHours);
-          rowData["Shift"] = r.shift;
-          rowData["Group"] = r.group;
-          rowData["Remarks"] = r.remarks;
-          return rowData;
         });
 
         // Append totals row
@@ -285,130 +279,116 @@ export default function ExportSingleAttendance({
           Status: `Weekend: ${weekendDays} | Holiday: ${holidayDays}`,
           In: `Delay Days: ${delayDaysCount}`,
           Out: `Onetime Punch: ${oneTimePunchedCount}`,
+          Delay: totalLateMins,
+          Regular: formatDecimalToHHMM(totalWorkHrs),
+          NOT: formatDecimalToHHMM(totalOtHrs),
+          EOT: formatDecimalToHHMM(totalWorkHrs + totalOtHrs),
+          Shift: "",
+          Group: "",
+          Remarks: `WE Present: ${weeklyDaysPresent} | Hol Present: ${holidayPresent}`,
         };
-        if (hasBreaks) {
-          totalsRow["Break Out"] = "";
-          totalsRow["Break In"] = "";
-          totalsRow["Break Late (m)"] = totalBreakLateMins;
-        }
-        totalsRow["Delay"] = totalLateMins;
-        totalsRow["Regular"] = formatDecimalToHHMM(totalWorkHrs);
-        totalsRow["NOT"] = formatDecimalToHHMM(totalOtHrs);
-        totalsRow["EOT"] = formatDecimalToHHMM(totalWorkHrs + totalOtHrs);
-        totalsRow["Shift"] = "";
-        totalsRow["Group"] = "";
-        totalsRow["Remarks"] = `WE Present: ${weeklyDaysPresent} | Hol Present: ${holidayPresent}`;
         dataToExport.push(totalsRow);
 
         exportToCSV(dataToExport, { filename: `jobcard_${emp.employeeCode || emp.name}.csv` });
         toast({ title: "Success", description: "Job Card CSV downloaded successfully" });
       } else {
-        // PDF Export - Landscape by default to handle the Job Card columns cleanly
-        const doc = new jsPDF("landscape");
+        // PDF Export - Optimized for A4 Portrait single page fit (Width: 210mm, Height: 297mm)
+        const doc = new jsPDF("portrait");
 
         // Branded Header Title
-        doc.setFontSize(16);
+        doc.setFontSize(14);
         doc.setFont("helvetica", "bold");
-        doc.text("JOB CARD REPORT", 14, 15);
+        doc.text("JOB CARD REPORT", 10, 12);
 
         // Meta box info
-        doc.setFontSize(10);
+        doc.setFontSize(8.5);
         doc.setFont("helvetica", "normal");
-        doc.text(`ID           :  ${emp.employeeCode || "N/A"}`, 14, 25);
-        doc.text(`Name         :  ${emp.name}`, 14, 30);
-        doc.text(`Designation  :  ${emp.designation || "N/A"}`, 14, 35);
-        doc.text(`Department   :  ${emp.department}`, 14, 40);
+        doc.text(`ID           :  ${emp.employeeCode || "N/A"}`, 10, 20);
+        doc.text(`Name         :  ${emp.name}`, 10, 24);
+        doc.text(`Designation  :  ${emp.designation || "N/A"}`, 10, 28);
+        doc.text(`Department   :  ${emp.department}`, 10, 32);
 
-        doc.text(`Section      :  ${emp.section || "N/A"}`, 110, 25);
-        doc.text(`Date of Join :  ${calculateTenureString(emp.joiningDate, toDate)}`, 110, 30);
+        doc.text(`Section      :  ${emp.section || "N/A"}`, 85, 20);
+        doc.text(`Date of Join :  ${calculateTenureString(emp.joiningDate, toDate)}`, 85, 24);
 
-        const rightAlignX = 220;
-        doc.text(`Report Period :  ${fromDate} to ${toDate}`, rightAlignX, 25);
-        doc.text(`Printed On    :  ${new Date().toLocaleDateString()}`, rightAlignX, 30);
+        doc.text(`Report Period:  ${fromDate} to ${toDate}`, 142, 20);
+        doc.text(`Printed On   :  ${new Date().toLocaleDateString()}`, 142, 24);
 
-        // AutoTable body data
+        // AutoTable body data (No Break Out / Break In columns)
         const tableData = rows.map((r) => {
-          const rowData = [
+          return [
             r.date,
             r.day.slice(0, 3),
             r.status,
             r.checkIn,
             r.checkOut,
+            r.lateMinutes > 0 ? String(r.lateMinutes) : "0",
+            formatDecimalToHHMM(r.workHours),
+            formatDecimalToHHMM(r.otHours),
+            formatDecimalToHHMM(r.workHours + r.otHours),
+            r.shift,
+            r.remarks || "--",
           ];
-          if (hasBreaks) {
-            rowData.push(r.breakOut);
-            rowData.push(r.breakIn);
-            rowData.push(r.breakLateMinutes > 0 ? String(r.breakLateMinutes) : "--");
-          }
-          rowData.push(r.lateMinutes > 0 ? String(r.lateMinutes) : "0");
-          rowData.push(formatDecimalToHHMM(r.workHours));
-          rowData.push(formatDecimalToHHMM(r.otHours));
-          rowData.push(formatDecimalToHHMM(r.workHours + r.otHours));
-          rowData.push(r.shift);
-          rowData.push(r.group);
-          rowData.push(r.remarks || "--");
-          return rowData;
         });
 
-        const headers = ["Date", "Day", "Status", "In", "Out"];
-        if (hasBreaks) {
-          headers.push("Break Out", "Break In", "Break Late");
-        }
-        headers.push("Delay", "Regular", "NOT", "EOT", "Shift", "Group", "Remarks");
+        const headers = ["Date", "Day", "Status", "In", "Out", "Delay", "Regular", "NOT", "EOT", "Shift", "Remarks"];
 
         autoTable(doc, {
-          startY: 46,
+          startY: 35,
           head: [headers],
           body: tableData,
           theme: "grid",
           headStyles: { fillColor: [30, 41, 59], textColor: 255 },
-          styles: { fontSize: 8, cellPadding: 2 },
+          styles: { fontSize: 7, cellPadding: 1.2 },
+          margin: { left: 10, right: 10 },
         });
 
-        // Summary box after table with page overflow check
+        // Summary box after table with single page safety check
         const pageHeight = doc.internal.pageSize.height || doc.internal.pageSize.getHeight();
-        const requiredSpace = 65;
-        let finalY = (doc as any).lastAutoTable.finalY + 10;
+        const requiredSpace = 55;
+        let finalY = (doc as any).lastAutoTable.finalY + 5;
 
-        if (finalY + requiredSpace > pageHeight - 15) {
+        // Force onto next page only if it overflows the absolute physical page limit
+        if (finalY + requiredSpace > pageHeight - 12) {
           doc.addPage();
-          finalY = 20;
+          finalY = 15;
         }
 
         doc.setFont("helvetica", "bold");
-        doc.text("Summary statistics:", 14, finalY);
+        doc.setFontSize(8.5);
+        doc.text("Summary statistics:", 10, finalY);
 
         doc.setFont("helvetica", "normal");
-        doc.text(`Total Days   : ${datesList.length}`, 14, finalY + 6);
-        doc.text(`Present Days : ${presentDays}`, 14, finalY + 11);
-        doc.text(`Absent Days  : ${absentDays}`, 14, finalY + 16);
-        doc.text(`Weekly Days  : ${weekendDays}`, 14, finalY + 21);
-        doc.text(`Holidays     : ${holidayDays}`, 14, finalY + 26);
+        doc.setFontSize(7.5);
+        
+        // Column 1 (Left X: 10)
+        doc.text(`Total Days   : ${datesList.length}`, 10, finalY + 5);
+        doc.text(`Present Days : ${presentDays}`, 10, finalY + 9);
+        doc.text(`Absent Days  : ${absentDays}`, 10, finalY + 13);
+        doc.text(`Weekly Days  : ${weekendDays}`, 10, finalY + 17);
+        doc.text(`Holidays     : ${holidayDays}`, 10, finalY + 21);
 
-        const secondColX = 90;
-        doc.text(`Delay in Days  : ${delayDaysCount}`, secondColX, finalY + 6);
-        doc.text(`Onetime Punch  : ${oneTimePunchedCount}`, secondColX, finalY + 11);
-        doc.text(`Half Days      : ${rows.filter(r => r.status === "HALF_DAY").length}`, secondColX, finalY + 16);
-        doc.text(`Weekly Present : ${weeklyDaysPresent}`, secondColX, finalY + 21);
-        doc.text(`Holiday Present: ${holidayPresent}`, secondColX, finalY + 26);
+        // Column 2 (Middle X: 75)
+        doc.text(`Delay in Days  : ${delayDaysCount}`, 75, finalY + 5);
+        doc.text(`Onetime Punch  : ${oneTimePunchedCount}`, 75, finalY + 9);
+        doc.text(`Half Days      : ${rows.filter(r => r.status === "HALF_DAY").length}`, 75, finalY + 13);
+        doc.text(`Weekly Present : ${weeklyDaysPresent}`, 75, finalY + 17);
+        doc.text(`Holiday Present: ${holidayPresent}`, 75, finalY + 21);
 
-        const thirdColX = 170;
-        doc.text(`Leave Days      : ${leaveDays} (LWP: ${unpaidLeaveCount}/L: ${paidLeaveCount})`, thirdColX, finalY + 6);
-        doc.text(`Total Regular   : ${formatDecimalToHHMM(totalWorkHrs)}`, thirdColX, finalY + 11);
-        doc.text(`Total NOT Hours : ${formatDecimalToHHMM(totalOtHrs)}`, thirdColX, finalY + 16);
-        doc.text(`Total EOT Hours : ${formatDecimalToHHMM(totalWorkHrs + totalOtHrs)}`, thirdColX, finalY + 21);
-        if (hasBreaks) {
-          doc.text(`Total Break Late: ${totalBreakLateMins} mins`, thirdColX, finalY + 26);
-        }
+        // Column 3 (Right X: 140)
+        doc.text(`Leave Days     : ${leaveDays} (LWP: ${unpaidLeaveCount}/L: ${paidLeaveCount})`, 140, finalY + 5);
+        doc.text(`Total Regular  : ${formatDecimalToHHMM(totalWorkHrs)}`, 140, finalY + 9);
+        doc.text(`Total NOT Hours: ${formatDecimalToHHMM(totalOtHrs)}`, 140, finalY + 13);
+        doc.text(`Total EOT Hours: ${formatDecimalToHHMM(totalWorkHrs + totalOtHrs)}`, 140, finalY + 17);
 
-        // Sign off section
-        const sigLineLength = 56;
-        const authSigX = 210;
-        doc.line(14, finalY + 42, 14 + sigLineLength, finalY + 42);
-        doc.text("Employee Signature", 14, finalY + 46);
+        // Sign off section (Optimized Y padding)
+        const sigLineLength = 45;
+        const authSigX = 150;
+        doc.line(10, finalY + 34, 10 + sigLineLength, finalY + 34);
+        doc.text("Employee Signature", 10, finalY + 38);
 
-        doc.line(authSigX, finalY + 42, authSigX + sigLineLength, finalY + 42);
-        doc.text("Authorized Signature", authSigX, finalY + 46);
+        doc.line(authSigX, finalY + 34, authSigX + sigLineLength, finalY + 34);
+        doc.text("Authorized Signature", authSigX, finalY + 38);
 
         doc.save(`jobcard_${emp.employeeCode || emp.name}.pdf`);
         toast({ title: "Success", description: "Job Card PDF downloaded successfully" });

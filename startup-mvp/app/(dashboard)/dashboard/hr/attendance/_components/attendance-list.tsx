@@ -490,18 +490,7 @@ export default function AttendanceListClient({
             />
           </div>
 
-          <div className="space-y-1.5 flex-1 min-w-[200px]">
-            <label className="text-xs font-semibold text-muted-foreground">Warehouse</label>
-            <SearchableSelect 
-              value={localFilters.warehouseId || "all"} 
-              onValueChange={(val) => pushFilters({ warehouseId: val || "all" })}
-              placeholder="All Warehouses"
-              options={[
-                { value: "all", label: "All Warehouses" },
-                ...warehouses.map(w => ({ value: w.id, label: w.name }))
-              ]}
-            />
-          </div>
+
 
           <div className="space-y-1.5 flex-1 min-w-[160px]">
             <label className="text-xs font-semibold text-muted-foreground">Employee Type</label>
