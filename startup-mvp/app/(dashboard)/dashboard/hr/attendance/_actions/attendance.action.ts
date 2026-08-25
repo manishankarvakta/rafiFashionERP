@@ -569,6 +569,7 @@ export async function getAttendanceRecordsPaginated({
   skill,
   employeeTypeId = "all",
   sortBy = "punch_latest",
+  otHours,
 }: {
   page?: number;
   limit?: number;
@@ -586,6 +587,7 @@ export async function getAttendanceRecordsPaginated({
   skill?: string;
   employeeTypeId?: string;
   sortBy?: string;
+  otHours?: string;
 }) {
   try {
     const session = await auth();
@@ -601,6 +603,19 @@ export async function getAttendanceRecordsPaginated({
       where.date = {};
       if (fromDate) where.date.gte = new Date(fromDate + "T00:00:00.000Z");
       if (toDate) where.date.lte = new Date(toDate + "T23:59:59.999Z");
+    }
+
+    // OT Hours filtering - exact rounded match (N - 10m <= otHours < N + 50m)
+    if (otHours) {
+      const N = parseInt(otHours, 10);
+      if (!isNaN(N)) {
+        const lowerBound = N - (10 / 60);
+        const upperBound = N + (50 / 60);
+        where.otHours = {
+          gte: lowerBound,
+          lt: upperBound
+        };
+      }
     }
 
     // Filters

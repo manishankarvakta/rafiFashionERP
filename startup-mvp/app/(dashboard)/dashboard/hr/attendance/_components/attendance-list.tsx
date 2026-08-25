@@ -104,6 +104,7 @@ interface AttendanceListClientProps {
     skill?: string;
     employeeTypeId?: string;
     sortBy?: string;
+    otHours?: string;
   };
   permissions?: {
     view: boolean;
@@ -337,6 +338,7 @@ export default function AttendanceListClient({
     if (updated.toDate) params.set("toDate", updated.toDate);
     if (updated.status && updated.status !== "ALL") params.set("status", updated.status);
     if (updated.deviceId) params.set("deviceId", updated.deviceId);
+    if (updated.otHours) params.set("otHours", updated.otHours);
 
     if (updated.departmentId && updated.departmentId !== "all") params.set("departmentId", updated.departmentId);
     if (updated.designationId && updated.designationId !== "all") params.set("designationId", updated.designationId);
@@ -358,7 +360,7 @@ export default function AttendanceListClient({
     const todayStr = format(new Date(), "yyyy-MM-dd");
     setLocalFilters({ 
       page: 1, limit: 20, search: "", warehouseId: "", deviceId: "", employeeId: "", status: "ALL", 
-      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "", employeeTypeId: "", sortBy: "punch_latest"
+      fromDate: todayStr, toDate: todayStr, departmentId: "", designationId: "", floorId: "", lineId: "", skill: "", employeeTypeId: "", sortBy: "punch_latest", otHours: ""
     });
     startTransition(() => {
       router.push(`/dashboard/hr/attendance?fromDate=${todayStr}&toDate=${todayStr}&limit=20`);
@@ -490,7 +492,16 @@ export default function AttendanceListClient({
             />
           </div>
 
-
+          <div className="space-y-1.5 flex-1 min-w-[120px]">
+            <label className="text-xs font-semibold text-muted-foreground">OT Hours</label>
+            <Input
+              type="number"
+              min="0"
+              placeholder="e.g. 2"
+              value={localFilters.otHours || ""}
+              onChange={(e) => pushFilters({ otHours: e.target.value })}
+            />
+          </div>
 
           <div className="space-y-1.5 flex-1 min-w-[160px]">
             <label className="text-xs font-semibold text-muted-foreground">Employee Type</label>

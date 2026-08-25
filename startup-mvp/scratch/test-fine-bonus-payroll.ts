@@ -300,7 +300,7 @@ async function runTest() {
     const totalDeduction = Number((
       absentDeduction + lateDeduction + loanDeduction + taxDeduction + pfDeduction + otherDeduction + customFine
     ).toFixed(2));
-
+// 
     const netPay = Number((grossPay - totalDeduction).toFixed(2));
     grandTotalAmount += netPay;
 
