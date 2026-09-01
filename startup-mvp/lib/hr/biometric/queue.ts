@@ -32,6 +32,7 @@ export type BiometricJobData = {
   endDate?: Date | string;
   employeeId?: string;
   chunkSize?: number;
+  commandId?: string;
 };
 
 // Import worker to register it when queue is loaded

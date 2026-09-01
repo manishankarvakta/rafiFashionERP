@@ -15,6 +15,7 @@ import {
 import { applyDailyAttendancePolicyValues } from "@/lib/hr-payroll/attendance-policy-service";
 import { startOfDay, endOfDay, differenceInMinutes } from "date-fns";
 import { syncTimezoneFromDb } from "../shift-utils";
+import { revalidateBothPaths } from "@/lib/route-utils-server";
 
 /**
  * Attendance Processor Service
@@ -359,6 +360,11 @@ export async function processBiometricAttendance(startDate: Date, endDate: Date,
 
     const durationMs = Date.now() - startTimeExec;
     console.log(`✅ [PROCESS] Generated ${createdCount} new, Updated ${updatedCount} existing records in ${durationMs}ms`);
+
+    // Purge and revalidate Next.js HR attendance dashboard cache
+    try {
+      revalidateBothPaths("hr/attendance");
+    } catch (_) {}
 
     return { 
       success: true, 

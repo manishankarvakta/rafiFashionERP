@@ -112,7 +112,7 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
         <div className="flex gap-2">
           {canEdit && (
             <>
-              <BiometricSyncButton date={fromDate} />
+              <BiometricSyncButton fromDate={fromDate} toDate={toDate} warehouseId={warehouseId} />
               <Button asChild variant="outline">
                 <Link href="/dashboard/hr/attendance/devices">
                   <FiSettings className="mr-2 h-4 w-4" />

@@ -266,9 +266,14 @@ export async function getEmployees(
 
     const totalPages = Math.ceil(total / limit);
 
+    const serializedEmployees = employees.map(emp => ({
+      ...emp,
+      salary: emp.salary ? Number(emp.salary) : null
+    }));
+
     return {
       success: true,
-      employees,
+      employees: serializedEmployees,
       pagination: {
         page,
         limit,

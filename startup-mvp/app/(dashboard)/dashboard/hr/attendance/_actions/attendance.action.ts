@@ -22,6 +22,25 @@ import { applyDailyAttendancePolicyValues } from "@/lib/hr-payroll/attendance-po
 import { syncTimezoneFromDb } from "@/lib/hr/shift-utils";
 
 /**
+ * Helper to serialize Prisma Decimal objects into standard numbers for Next.js Client Component compatibility
+ */
+function serializeAttendanceDecimals(att: any) {
+  if (!att) return att;
+  return {
+    ...att,
+    workHours: att.workHours ? Number(att.workHours) : 0,
+    otHours: att.otHours ? Number(att.otHours) : 0,
+    breakLateCountValue: att.breakLateCountValue ? Number(att.breakLateCountValue) : 0,
+    lateCountValue: att.lateCountValue ? Number(att.lateCountValue) : 0,
+    lateDeductionAmount: att.lateDeductionAmount ? Number(att.lateDeductionAmount) : 0,
+    tiffinBillAmount: att.tiffinBillAmount ? Number(att.tiffinBillAmount) : 0,
+    nightBillAmount: att.nightBillAmount ? Number(att.nightBillAmount) : 0,
+    holidayBillAmount: att.holidayBillAmount ? Number(att.holidayBillAmount) : 0,
+    calculatedOvertimeAmount: att.calculatedOvertimeAmount ? Number(att.calculatedOvertimeAmount) : 0,
+  };
+}
+
+/**
  * Log raw biometric/manual attendance punch
  */
 export async function logAttendancePunch(employeeId: string, timestamp: Date, source: "BIOMETRIC" | "MANUAL" | "APP", deviceId?: string) {
@@ -208,7 +227,7 @@ export async function processManualAttendance(input: {
     }
 
     revalidateBothPaths("hr/attendance");
-    return { success: true, attendance };
+    return { success: true, attendance: serializeAttendanceDecimals(attendance) };
 
   } catch (error) {
     console.error("processManualAttendance error:", error);
@@ -234,7 +253,7 @@ export async function getAttendanceRecord(employeeId: string, date: string) {
       }
     });
 
-    return { success: true, record };
+    return { success: true, record: serializeAttendanceDecimals(record) };
   } catch (error) {
     console.error("getAttendanceRecord error:", error);
     return { success: false, error: "Failed to fetch attendance record" };
@@ -278,7 +297,8 @@ export async function getAttendances(startDate: Date, endDate: Date, employeeId?
       orderBy: [{ date: 'desc' }, { employee: { name: 'asc' } }]
     });
 
-    return { success: true, attendances };
+    const serialized = attendances.map(serializeAttendanceDecimals);
+    return { success: true, attendances: serialized };
   } catch (error) {
     console.error("getAttendances error:", error);
     return { success: false, error: "Failed to fetch attendances", attendances: [] };
@@ -755,10 +775,11 @@ export async function getAttendanceRecordsPaginated({
       const total = virtualAttendances.length;
       const skip = (page - 1) * limit;
       const paginatedAttendances = virtualAttendances.slice(skip, skip + limit);
+      const serializedAttendances = paginatedAttendances.map(serializeAttendanceDecimals);
 
       return {
         success: true,
-        attendances: paginatedAttendances as any[],
+        attendances: serializedAttendances as any[],
         pagination: {
           total,
           pages: Math.ceil(total / limit),
@@ -828,10 +849,11 @@ export async function getAttendanceRecordsPaginated({
     const total = allAttendances.length;
     const skip = (page - 1) * limit;
     const paginatedAttendances = allAttendances.slice(skip, skip + limit);
+    const serializedAttendances = paginatedAttendances.map(serializeAttendanceDecimals);
 
     return {
       success: true,
-      attendances: paginatedAttendances,
+      attendances: serializedAttendances,
       pagination: {
         total,
         pages: Math.ceil(total / limit),

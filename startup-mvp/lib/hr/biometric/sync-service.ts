@@ -1,6 +1,100 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeBiometricLogs, NormalizedPunch } from "./normalization";
 import { biometricQueue, BiometricJobType } from "./queue";
+import { processBiometricAttendance } from "./processor";
+import { revalidateBothPaths } from "@/lib/route-utils-server";
+
+/**
+ * Safely validates a user ID against prisma.user to prevent foreign key constraint violations (P2003)
+ */
+export async function validateSyncedByUser(syncedBy?: string | null): Promise<string | null> {
+  if (!syncedBy) return null;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: syncedBy },
+      select: { id: true },
+    });
+    return user ? user.id : null;
+  } catch (err) {
+    console.warn("Failed to validate syncedBy user:", err);
+    return null;
+  }
+}
+
+/**
+ * Direct synchronous processor for development mode or when BullMQ/Redis is unavailable.
+ */
+export async function processBiometricLogsDirectly(input: {
+  syncLogId: string;
+  vendor: string;
+  rawData: any[];
+  deviceId?: string;
+  commandId?: string;
+}) {
+  const { syncLogId, vendor, rawData, deviceId, commandId } = input;
+  console.log(`⚡ [DIRECT SYNC] Executing direct processing for SyncLog ${syncLogId} (${rawData?.length || 0} records)`);
+
+  try {
+    // 1. Update SyncLog status to PROCESSING
+    await prisma.biometricSyncLog.update({
+      where: { id: syncLogId },
+      data: { status: "PROCESSING" as any },
+    }).catch(() => null);
+
+    // 2. Process chunk
+    const result = await processNormalizedChunk({
+      vendor,
+      rawData,
+      deviceId,
+    });
+
+    // 3. Update SyncLog status to COMPLETED
+    await prisma.biometricSyncLog.update({
+      where: { id: syncLogId },
+      data: { status: "COMPLETED" as any },
+    }).catch(() => null);
+
+    // 4. Update BiometricCommand if present
+    if (commandId) {
+      await prisma.biometricCommand.update({
+        where: { id: commandId },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          resultText: `Directly processed ${rawData?.length || 0} records.`,
+        },
+      }).catch(() => null);
+    }
+
+    // 5. Revalidate HR attendance dashboard
+    try {
+      revalidateBothPaths("hr/attendance");
+    } catch (_) {}
+
+    return { success: true, ...result };
+  } catch (error: any) {
+    console.error(`❌ [DIRECT SYNC] Direct processing failed for SyncLog ${syncLogId}:`, error);
+    await prisma.biometricSyncLog.update({
+      where: { id: syncLogId },
+      data: {
+        status: "FAILED" as any,
+        errorMessage: error?.message || "Direct processing failed",
+      },
+    }).catch(() => null);
+
+    if (commandId) {
+      await prisma.biometricCommand.update({
+        where: { id: commandId },
+        data: {
+          status: "FAILED",
+          completedAt: new Date(),
+          errorMessage: error?.message || "Direct processing failed",
+        },
+      }).catch(() => null);
+    }
+    throw error;
+  }
+}
 
 /**
  * Biometric Sync Service
@@ -13,31 +107,55 @@ export async function syncBiometricLogs(input: {
   deviceId?: string;
 }) {
   try {
+    // 0. Validate syncedBy against user table to ensure foreign key safety
+    const safeSyncedBy = await validateSyncedByUser(input.syncedBy);
+
     // 1. Create a Sync Log in PENDING status
     const syncLog = await prisma.biometricSyncLog.create({
       data: {
         vendor: input.vendor,
         deviceId: input.deviceId,
         recordsCount: input.rawData.length,
-        syncedBy: input.syncedBy,
+        syncedBy: safeSyncedBy,
         status: "PENDING" as any,
       },
     });
 
-    // 2. Enqueue the sync job
-    await biometricQueue.add(`sync-${syncLog.id}`, {
-      type: BiometricJobType.SYNC_LOGS,
-      syncLogId: syncLog.id,
-      vendor: input.vendor,
-      rawData: input.rawData,
-      deviceId: input.deviceId,
-      syncedBy: input.syncedBy,
-    });
+    // 2. Decide whether to use queue or synchronous fallback
+    const isDev = process.env.NODE_ENV === "development" || process.env.BIOMETRIC_SYNC_MODE === "sync";
+    let enqueued = false;
+
+    if (!isDev) {
+      try {
+        await biometricQueue.add(`sync-${syncLog.id}`, {
+          type: BiometricJobType.SYNC_LOGS,
+          syncLogId: syncLog.id,
+          vendor: input.vendor,
+          rawData: input.rawData,
+          deviceId: input.deviceId,
+          syncedBy: safeSyncedBy || undefined,
+        });
+        enqueued = true;
+      } catch (queueError) {
+        console.warn("⚠️ BullMQ queue add failed, falling back to direct synchronous processing:", queueError);
+      }
+    }
+
+    if (!enqueued) {
+      console.log(`⚡ [SYNC SERVICE] Dev/Fallback mode: Processing ${input.rawData.length} logs synchronously...`);
+      await processBiometricLogsDirectly({
+        syncLogId: syncLog.id,
+        vendor: input.vendor,
+        rawData: input.rawData,
+        deviceId: input.deviceId,
+      });
+      return { success: true, syncLogId: syncLog.id, message: "Logs processed synchronously" };
+    }
 
     return { success: true, syncLogId: syncLog.id, message: "Sync job enqueued" };
   } catch (error) {
     console.error("syncBiometricLogs error:", error);
-    return { success: false, error: "Failed to enqueue sync job" };
+    return { success: false, error: "Failed to process sync job" };
   }
 }
 
@@ -102,6 +220,9 @@ export async function processNormalizedChunk(input: {
     if (!employeeId && !isDisabledAccess) {
       const matchingEmployeeId = empFallbackMap.get(log.biometricDeviceId);
       if (matchingEmployeeId) {
+        // Enforce employeeId is always assigned so AttendanceLog is created
+        employeeId = matchingEmployeeId;
+
         // Enforce "one employee will have one map" -> Check if employee already has a map
         const existingEmpMap = deviceMaps.find(m => m.employeeId === matchingEmployeeId);
         
@@ -123,7 +244,6 @@ export async function processNormalizedChunk(input: {
             existingEmpMap.deviceUserId = log.biometricDeviceId;
             existingEmpMap.isActive = true;
             
-            employeeId = matchingEmployeeId;
             console.log(`[SYNC] Updated existing EmployeeDeviceMap ID:${existingEmpMap.id} for employee:${employeeId} to deviceUserId:${log.biometricDeviceId}`);
           } catch (err) {
             console.error("[SYNC] Failed to update existing mapping:", err);
@@ -150,7 +270,6 @@ export async function processNormalizedChunk(input: {
               isActive: true
             });
             
-            employeeId = matchingEmployeeId;
             console.log(`[SYNC] Auto-generated new EmployeeDeviceMap for employee:${employeeId} device:${input.deviceId} pin:${log.biometricDeviceId}`);
           } catch (err) {
             console.error("[SYNC] Failed to auto-generate mapping:", err);
@@ -207,7 +326,7 @@ export async function processNormalizedChunk(input: {
 
   console.log("✅ [SYNC] Finish Result. Upserted:", processedCount, "Failed/Skipped:", errorCount);
 
-  // Auto-chain: Enqueue processing for the affected date range
+  // Auto-chain: Enqueue or directly process attendance calculation for affected date range
   if (processedCount > 0 && normalizedLogs.length > 0) {
     let minDate = normalizedLogs[0].timestamp;
     let maxDate = normalizedLogs[0].timestamp;
@@ -216,13 +335,36 @@ export async function processNormalizedChunk(input: {
       if (log.timestamp > maxDate) maxDate = log.timestamp;
     }
     
-    // Auto-enqueue attendance calculation
-    await biometricQueue.add(`auto-process-${Date.now()}`, {
-      type: BiometricJobType.PROCESS_ATTENDANCE,
-      startDate: minDate,
-      endDate: maxDate,
-    });
-    console.log(`🚀 [SYNC] Auto-chained processing job for ${minDate.toISOString()} to ${maxDate.toISOString()}`);
+    const isDev = process.env.NODE_ENV === "development" || process.env.BIOMETRIC_SYNC_MODE === "sync";
+    let calculationEnqueued = false;
+
+    if (!isDev) {
+      try {
+        await biometricQueue.add(`auto-process-${Date.now()}`, {
+          type: BiometricJobType.PROCESS_ATTENDANCE,
+          startDate: minDate,
+          endDate: maxDate,
+        });
+        calculationEnqueued = true;
+        console.log(`🚀 [SYNC] Auto-chained processing job for ${minDate.toISOString()} to ${maxDate.toISOString()}`);
+      } catch (queueErr) {
+        console.warn("⚠️ BullMQ PROCESS_ATTENDANCE enqueue failed, running directly:", queueErr);
+      }
+    }
+
+    if (!calculationEnqueued) {
+      console.log(`⚡ [SYNC] Dev/Fallback mode: Directly calculating attendance for ${minDate.toISOString()} to ${maxDate.toISOString()}...`);
+      try {
+        await processBiometricAttendance(new Date(minDate), new Date(maxDate));
+      } catch (procErr) {
+        console.error("Direct attendance calculation error:", procErr);
+      }
+    }
+
+    // Purge and revalidate Next.js HR attendance dashboard cache
+    try {
+      revalidateBothPaths("hr/attendance");
+    } catch (_) {}
   }
 
   return { processedCount, errorCount };
