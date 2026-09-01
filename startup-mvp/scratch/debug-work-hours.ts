@@ -2,6 +2,8 @@ import { prisma } from "../lib/prisma";
 import { getShiftWindow, calculateWorkHoursWithBreak, calculateOTHours } from "../lib/hr/shift-utils";
 import { differenceInMinutes } from "date-fns";
 
+// 
+
 async function debugWorkHours() {
   const dateStr = "2026-07-28";
   const start = new Date(`${dateStr}T00:00:00.000Z`);
