@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { processNormalizedChunk } from "./sync-service";
 import { processBiometricAttendance } from "./processor";
 import { BiometricJobData, BiometricJobType } from "./queue";
+import { revalidateBothPaths } from "@/lib/route-utils-server";
 
 console.log("🚀 Biometric Worker instantiated and listening for jobs on 'biometric-sync' queue!");
 
@@ -13,12 +14,12 @@ export const biometricWorker = new Worker(
     const { type } = job.data;
 
     if (type === BiometricJobType.SYNC_LOGS) {
-      const { syncLogId, rawData, vendor, deviceId } = job.data;
+      const { syncLogId, rawData, vendor, deviceId, commandId } = job.data;
       if (!syncLogId) {
         throw new Error("syncLogId is required for SYNC_LOGS job");
       }
       
-      console.log(`Starting job ${job.id} (SYNC_LOGS) for SyncLog ${syncLogId} with ${rawData?.length || 0} logs`);
+      console.log(`Starting job ${job.id} (SYNC_LOGS) for SyncLog ${syncLogId} with ${rawData?.length || 0} logs (Command ID: ${commandId || 'none'})`);
 
       try {
         // 1. Update SyncLog status to PROCESSING
@@ -53,7 +54,24 @@ export const biometricWorker = new Worker(
           data: { status: "COMPLETED" as any },
         });
 
+        // 4. Update BiometricCommand status to COMPLETED
+        if (commandId) {
+          await prisma.biometricCommand.update({
+            where: { id: commandId },
+            data: {
+              status: "COMPLETED",
+              completedAt: new Date(),
+              resultText: `Successfully processed ${dataArray.length} records in background worker.`
+            }
+          }).catch((err) => {
+            console.error(`Failed to update BiometricCommand ${commandId} to COMPLETED:`, err);
+          });
+        }
+
         console.log(`✅ SYNC_LOGS Job ${job.id} completely finished. Processed total: ${dataArray.length} records.`);
+        try {
+          revalidateBothPaths("hr/attendance");
+        } catch (_) {}
         return { success: true, processed: dataArray.length };
       } catch (error) {
         console.error(`Error in biometric worker for job ${job.id} (SYNC_LOGS):`, error);
@@ -65,7 +83,23 @@ export const biometricWorker = new Worker(
             status: "FAILED" as any,
             errorMessage: error instanceof Error ? error.message : "Unknown error in worker"
           },
+        }).catch((err) => {
+          console.error(`Failed to update BiometricSyncLog ${syncLogId} to FAILED:`, err);
         });
+
+        // Update BiometricCommand status to FAILED
+        if (commandId) {
+          await prisma.biometricCommand.update({
+            where: { id: commandId },
+            data: {
+              status: "FAILED",
+              completedAt: new Date(),
+              errorMessage: error instanceof Error ? error.message : "Unknown error in background worker"
+            }
+          }).catch((err) => {
+            console.error(`Failed to update BiometricCommand ${commandId} to FAILED:`, err);
+          });
+        }
 
         throw error; // Let BullMQ handle retry
       }
@@ -89,6 +123,9 @@ export const biometricWorker = new Worker(
         }
 
         console.log(`✅ PROCESS_ATTENDANCE Job ${job.id} completely finished for range ${startDate} to ${endDate}.`);
+        try {
+          revalidateBothPaths("hr/attendance");
+        } catch (_) {}
         return result;
       } catch (error) {
         console.error(`Error in biometric worker for job ${job.id} (PROCESS_ATTENDANCE):`, error);

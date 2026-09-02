@@ -7,34 +7,40 @@ import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
 
 interface BiometricSyncButtonProps {
-  date: string;
+  fromDate: string;
+  toDate: string;
+  warehouseId?: string;
 }
 
-export default function BiometricSyncButton({ date }: BiometricSyncButtonProps) {
+export default function BiometricSyncButton({ fromDate, toDate, warehouseId }: BiometricSyncButtonProps) {
   const { toast } = useToast();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   return (
     <div className="flex gap-2">
-      {/* 
-        Simulating a device sync. In reality, the physical device hits a Webhook endpoint.
-      */}
       <Button 
         variant="outline" 
         onClick={() => {
           startTransition(async () => {
-            toast({ title: "Syncing...", description: "Connecting to biometric device..." });
+            console.log("⚡ [UI] Sync Device button clicked.");
+            console.log(`⚡ [UI] Parameters: fromDate=${fromDate}, toDate=${toDate}, warehouseId=${warehouseId || "ALL"}`);
+
+            toast({ 
+              title: "Requesting Sync...", 
+              description: `Queueing historical re-sync from ${fromDate} to ${toDate}...` 
+            });
             
-            // Call the active TCP/IP puller
-            const { triggerActiveDeviceSync } = await import("../_actions/biometric.action");
-            const res = await triggerActiveDeviceSync();
+            const { triggerBulkRangeSync } = await import("../_actions/biometric.action");
+            const res = await triggerBulkRangeSync(fromDate, toDate, warehouseId);
               
             if(res.success) {
-              toast({ title: "Sync Complete", description: res.message });
+              console.log("✅ [UI] triggerBulkRangeSync succeeded:", res);
+              toast({ title: "Request Enqueued", description: res.message });
               router.refresh();
             } else {
-              toast({ title: "Sync Error", description: res.error, variant: "destructive" });
+              console.error("❌ [UI] triggerBulkRangeSync failed:", res);
+              toast({ title: "Request Error", description: res.error, variant: "destructive" });
             }
           });
         }}
@@ -46,3 +52,4 @@ export default function BiometricSyncButton({ date }: BiometricSyncButtonProps) 
     </div>
   );
 }
+
