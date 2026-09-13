@@ -2,7 +2,7 @@ import React from "react";
 import { getAttendanceRecordsPaginated } from "./_actions/attendance.action";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { FiPlus, FiSettings } from "react-icons/fi";
+import { FiPlus, FiSettings, FiUpload } from "react-icons/fi";
 import AttendanceListClient from "./_components/attendance-list";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -113,6 +113,12 @@ export default async function AttendancePage({ searchParams }: AttendancePagePro
           {canEdit && (
             <>
               <BiometricSyncButton fromDate={fromDate} toDate={toDate} warehouseId={warehouseId} />
+              <Button asChild variant="outline" className="border-emerald-600 text-emerald-700 hover:bg-emerald-50">
+                <Link href="/dashboard/hr/attendance/import">
+                  <FiUpload className="mr-2 h-4 w-4" />
+                  Import Attendance
+                </Link>
+              </Button>
               <Button asChild variant="outline">
                 <Link href="/dashboard/hr/attendance/devices">
                   <FiSettings className="mr-2 h-4 w-4" />
