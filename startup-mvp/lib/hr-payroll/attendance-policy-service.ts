@@ -213,7 +213,25 @@ export function calculateDailyAttendancePolicyValues(input: DailyAttendancePolic
       if (diffMins <= 0) {
         diffMins += 24 * 60; // crossed midnight
       }
-      shiftHours = Number((diffMins / 60).toFixed(2));
+
+      // Deduct break duration (Fixed or Tracked)
+      let breakDurationMins = 0;
+      if (shift.breakType === "FIXED") {
+        breakDurationMins = shift.breakDuration ?? 0;
+      } else if (shift.breakType === "TRACKED" || !shift.breakType) {
+        if (shift.breakStartTime && shift.breakEndTime) {
+          const [bStartH, bStartM] = shift.breakStartTime.split(":").map(Number);
+          const [bEndH, bEndM] = shift.breakEndTime.split(":").map(Number);
+          let bDiff = (bEndH * 60 + bEndM) - (bStartH * 60 + bStartM);
+          if (bDiff <= 0) bDiff += 24 * 60;
+          breakDurationMins = bDiff;
+        } else {
+          breakDurationMins = shift.breakDuration ?? 0;
+        }
+      }
+
+      const netWorkingMins = Math.max(0, diffMins - breakDurationMins);
+      shiftHours = netWorkingMins > 0 ? Number((netWorkingMins / 60).toFixed(2)) : 8;
     }
 
     const otRes = calculateOvertimePreview({

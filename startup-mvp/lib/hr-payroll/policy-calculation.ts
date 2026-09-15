@@ -684,7 +684,26 @@ export function calculatePayrollPolicyPreview(input: PayrollPolicyPreviewInput):
       end = addDays(end, 1);
     }
     const diff = differenceInMinutes(end, start);
-    shiftHours = diff > 0 ? Number((diff / 60).toFixed(2)) : 8;
+    
+    // Deduct break duration (Fixed or Tracked)
+    let breakDurationMins = 0;
+    if (input.shift.breakType === "FIXED") {
+      breakDurationMins = input.shift.breakDuration ?? 0;
+    } else if (input.shift.breakType === "TRACKED" || !input.shift.breakType) {
+      if (input.shift.breakStartTime && input.shift.breakEndTime) {
+        const bStart = combineDateAndTime(attendanceDate, input.shift.breakStartTime, timezone);
+        let bEnd = combineDateAndTime(attendanceDate, input.shift.breakEndTime, timezone);
+        if (input.shift.breakEndTime <= input.shift.breakStartTime) {
+          bEnd = addDays(bEnd, 1);
+        }
+        breakDurationMins = Math.max(0, differenceInMinutes(bEnd, bStart));
+      } else {
+        breakDurationMins = input.shift.breakDuration ?? 0;
+      }
+    }
+
+    const netDiff = Math.max(0, diff - breakDurationMins);
+    shiftHours = netDiff > 0 ? Number((netDiff / 60).toFixed(2)) : 8;
   }
 
   // 1. Salary breakdown

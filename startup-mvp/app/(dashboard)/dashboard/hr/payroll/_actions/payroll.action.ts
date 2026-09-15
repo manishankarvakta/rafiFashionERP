@@ -7,14 +7,131 @@ import { revalidateBothPaths } from "@/lib/route-utils-server";
 import { Prisma, PayrollStatus } from "@prisma/client";
 import { hasPermission } from "@/lib/permissions";
 import { createVoucher, postVoucher, cancelVoucher } from "../../../accounts/vouchers/_actions/voucher.action";
-import { getPayrollSettings } from "@/lib/payroll-settings";
+import { getPayrollSettings, isConfiguredWeekend } from "@/lib/payroll-settings";
 import { getAccountingOperationSettings } from "@/lib/accounting-settings";
 import { validateHRMAccountingSetup } from "@/lib/hr/payroll-settings-guard";
 import { syncTimezoneFromDb } from "@/lib/hr/shift-utils";
+import { calculateDailyAttendancePolicyValues } from "@/lib/hr-payroll/attendance-policy-service";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Evaluates an attendance record against active employee policies and shift rules.
+ * If the record is unlocked, dynamically computes OT amount, tiffin, night, and holiday bills
+ * so that payroll calculations are always accurate even if attendance rows were inserted
+ * prior to policy creation.
+ */
+function resolveAttendanceDayValues(
+  curr: any,
+  emp: any,
+  weekends: number[],
+  monthHolidays: any[],
+) {
+  if (curr.isLocked) {
+    return {
+      status: curr.status,
+      otHours: Number(curr.otHours) || 0,
+      lateCountTotal: (Number(curr.lateCountValue) || 0) + (Number(curr.breakLateCountValue) || 0),
+      calculatedOvertimeAmount: Number(curr.calculatedOvertimeAmount) || 0,
+      tiffinBillAmount: Number(curr.tiffinBillAmount) || 0,
+      nightBillAmount: Number(curr.nightBillAmount) || 0,
+      holidayBillAmount: Number(curr.holidayBillAmount) || 0,
+      calculatedResult: null
+    };
+  }
+
+  const attDate = new Date(curr.date);
+  const isWeekendDay = isConfiguredWeekend(attDate, weekends);
+  const isPublicHoliday = monthHolidays.some(h => {
+    const hDate = new Date(h.date);
+    const sameDate = hDate.getUTCFullYear() === attDate.getUTCFullYear() &&
+                     hDate.getUTCMonth() === attDate.getUTCMonth() &&
+                     hDate.getUTCDate() === attDate.getUTCDate();
+    return sameDate && (!h.warehouseId || h.warehouseId === emp.warehouseId);
+  });
+  const workedOnHoliday = (isWeekendDay || isPublicHoliday) && !!curr.checkIn && !!curr.checkOut;
+
+  const policies = emp.employeeType || {
+    name: "Standard",
+    salaryStructurePolicy: null,
+    attendancePolicy: null,
+    latePolicy: null,
+    overtimePolicy: null,
+    tiffinBillPolicy: null,
+    nightBillPolicy: null,
+    holidayBillPolicy: null,
+  };
+
+  const activeShift = curr.shift || emp.shift || null;
+  const grossSalary = Number(emp.salary || 0);
+
+  const result = calculateDailyAttendancePolicyValues({
+    attendance: curr,
+    employee: emp,
+    employeeTypePolicies: policies,
+    shift: activeShift ? {
+      startTime: activeShift.startTime,
+      endTime: activeShift.endTime,
+      graceMinutes: activeShift.graceMinutes,
+      lateAfter: activeShift.lateAfter,
+      halfDayAfter: activeShift.halfDayAfter,
+      otStartAfter: activeShift.otStartAfter,
+      breakStartTime: activeShift.breakStartTime,
+      breakEndTime: activeShift.breakEndTime,
+      breakGraceMinutes: activeShift.breakGraceMinutes,
+      breakLateAfter: activeShift.breakLateAfter,
+      breakType: activeShift.breakType,
+      breakDuration: activeShift.breakDuration,
+    } : null,
+    isWeekend: isWeekendDay,
+    isPublicHoliday,
+    workedOnHoliday,
+    grossSalary,
+  });
+
+  return {
+    status: result.status || curr.status,
+    otHours: Number(result.otHours) || Number(curr.otHours) || 0,
+    lateCountTotal: (Number(result.lateCountValue) || 0) + (Number(result.breakLateCountValue) || 0),
+    calculatedOvertimeAmount: Number(result.calculatedOvertimeAmount) || 0,
+    tiffinBillAmount: Number(result.tiffinBillAmount) || 0,
+    nightBillAmount: Number(result.nightBillAmount) || 0,
+    holidayBillAmount: Number(result.holidayBillAmount) || 0,
+    calculatedResult: result
+  };
+}
+
+async function batchSyncAttendancePolicyUpdates(updates: Array<{ id: string; calculatedResult: any }>) {
+  if (updates.length === 0) return;
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE);
+    await Promise.allSettled(
+      chunk.map(u => {
+        const res = u.calculatedResult;
+        return prisma.attendance.update({
+          where: { id: u.id },
+          data: {
+            status: res.status as any,
+            workHours: new Prisma.Decimal(res.workHours),
+            otHours: new Prisma.Decimal(res.otHours),
+            lateMinutes: res.lateMinutes,
+            lateCountValue: new Prisma.Decimal(res.lateCountValue),
+            breakLateMinutes: res.breakLateMinutes,
+            breakLateCountValue: new Prisma.Decimal(res.breakLateCountValue),
+            tiffinBillAmount: new Prisma.Decimal(res.tiffinBillAmount),
+            nightBillAmount: new Prisma.Decimal(res.nightBillAmount),
+            holidayBillAmount: new Prisma.Decimal(res.holidayBillAmount),
+            calculatedOvertimeAmount: new Prisma.Decimal(res.calculatedOvertimeAmount),
+            policyCalculationNote: res.policyCalculationNote,
+          }
+        });
+      })
+    );
+  }
+}
 
 /**
  * Applies the configured net pay rounding rule.
@@ -94,6 +211,7 @@ export async function generatePayroll(month: number, year: number, options?: Gen
         ]
       },
       include: {
+        shift: true,
         employeeType: {
           include: {
             attendancePolicy: true,
@@ -130,6 +248,16 @@ export async function generatePayroll(month: number, year: number, options?: Gen
     // Load payroll settings for calculation rules
     const payrollSettings = await getPayrollSettings();
     const calc = payrollSettings.calculation;
+    const weekends = payrollSettings?.calculation?.weekends || [0, 6];
+
+    // Fetch month holidays for policy overtime / holiday bill evaluation
+    const monthHolidays = await prisma.holiday.findMany({
+      where: {
+        date: { gte: startDate, lte: endDate },
+        status: "active",
+        isTrash: false,
+      }
+    });
 
     // Backend Safety: Check and log attendance warnings
     try {
@@ -164,11 +292,14 @@ export async function generatePayroll(month: number, year: number, options?: Gen
         date: { gte: startDate, lte: endDate },
       },
       include: {
+        shift: true,
         leaveApplication: {
           include: { leaveType: true }
         }
       }
     });
+
+    const pendingAttendanceUpdates: Array<{ id: string; calculatedResult: any }> = [];
 
     // Group attendance by employee
     const attendanceByEmployee = attendanceRecords.reduce((acc, curr) => {
@@ -404,23 +535,33 @@ export async function generatePayroll(month: number, year: number, options?: Gen
       });
 
       const att = empAttendance.reduce((acc, curr) => {
-        if (curr.status === "ABSENT") {
+        const dayVal = resolveAttendanceDayValues(curr, emp, weekends, monthHolidays);
+
+        if (dayVal.status === "ABSENT") {
           acc.absentDays += 1;
-        } else if (curr.status === "HALF_DAY") {
+        } else if (dayVal.status === "HALF_DAY") {
           acc.absentDays += 0.5;
-        } else if (curr.status === "LEAVE") {
+        } else if (dayVal.status === "LEAVE") {
           const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
           if (!isPaid) {
             acc.absentDays += 1;
           }
         }
         
-        acc.otHours += Number(curr.otHours) || 0;
-        acc.lateCountTotal += (Number(curr.lateCountValue) || 0) + (Number(curr.breakLateCountValue) || 0);
-        acc.totalCalculatedOvertimeAmount += Number(curr.calculatedOvertimeAmount) || 0;
-        acc.totalTiffinAllowance += Number(curr.tiffinBillAmount) || 0;
-        acc.totalNightAllowance += Number(curr.nightBillAmount) || 0;
-        acc.totalHolidayAllowance += Number(curr.holidayBillAmount) || 0;
+        acc.otHours += dayVal.otHours;
+        acc.lateCountTotal += dayVal.lateCountTotal;
+        acc.totalCalculatedOvertimeAmount += dayVal.calculatedOvertimeAmount;
+        acc.totalTiffinAllowance += dayVal.tiffinBillAmount;
+        acc.totalNightAllowance += dayVal.nightBillAmount;
+        acc.totalHolidayAllowance += dayVal.holidayBillAmount;
+
+        if (!curr.isLocked && dayVal.calculatedResult) {
+          pendingAttendanceUpdates.push({
+            id: curr.id,
+            calculatedResult: dayVal.calculatedResult
+          });
+        }
+
         return acc;
       }, {
         absentDays: 0,
@@ -651,6 +792,12 @@ export async function generatePayroll(month: number, year: number, options?: Gen
 
     await logItemCreated(session.user.id, "Payroll", payroll.id, payrollNumber);
     revalidateBothPaths("hr/payroll");
+
+    if (pendingAttendanceUpdates.length > 0) {
+      batchSyncAttendancePolicyUpdates(pendingAttendanceUpdates).catch(err => {
+        console.error("Failed to sync attendance policy updates in background:", err);
+      });
+    }
 
     return { success: true, payrollId: payroll.id };
   } catch (error) {
@@ -1665,6 +1812,7 @@ export async function recalculatePayroll(payrollId: string) {
         ]
       },
       include: {
+        shift: true,
         employeeType: {
           include: {
             attendancePolicy: true,
@@ -1698,6 +1846,16 @@ export async function recalculatePayroll(payrollId: string) {
 
     const payrollSettings = await getPayrollSettings();
     const calc = payrollSettings.calculation;
+    const weekends = payrollSettings?.calculation?.weekends || [0, 6];
+
+    // Fetch month holidays for policy overtime / holiday bill evaluation
+    const monthHolidays = await prisma.holiday.findMany({
+      where: {
+        date: { gte: startDate, lte: endDate },
+        status: "active",
+        isTrash: false,
+      }
+    });
 
     const calendarDaysInMonth = endDate.getDate();
     const payDivisor =
@@ -1719,11 +1877,14 @@ export async function recalculatePayroll(payrollId: string) {
         date: { gte: startDate, lte: endDate },
       },
       include: {
+        shift: true,
         leaveApplication: {
           include: { leaveType: true }
         }
       }
     });
+
+    const pendingAttendanceUpdates: Array<{ id: string; calculatedResult: any }> = [];
 
     const loans = await prisma.employeeLoan.findMany({
       where: {
@@ -1874,18 +2035,28 @@ export async function recalculatePayroll(payrollId: string) {
       });
 
       const att = empAttendance.reduce((acc, curr) => {
-        if (curr.status === "ABSENT") acc.absentDays += 1;
-        else if (curr.status === "HALF_DAY") acc.absentDays += 0.5;
-        else if (curr.status === "LEAVE") {
+        const dayVal = resolveAttendanceDayValues(curr, emp, weekends, monthHolidays);
+
+        if (dayVal.status === "ABSENT") acc.absentDays += 1;
+        else if (dayVal.status === "HALF_DAY") acc.absentDays += 0.5;
+        else if (dayVal.status === "LEAVE") {
           const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
           if (!isPaid) acc.absentDays += 1;
         }
-        acc.otHours += Number(curr.otHours) || 0;
-        acc.lateCountTotal += (Number(curr.lateCountValue) || 0) + (Number(curr.breakLateCountValue) || 0);
-        acc.totalCalculatedOvertimeAmount += Number(curr.calculatedOvertimeAmount) || 0;
-        acc.totalTiffinAllowance += Number(curr.tiffinBillAmount) || 0;
-        acc.totalNightAllowance += Number(curr.nightBillAmount) || 0;
-        acc.totalHolidayAllowance += Number(curr.holidayBillAmount) || 0;
+        acc.otHours += dayVal.otHours;
+        acc.lateCountTotal += dayVal.lateCountTotal;
+        acc.totalCalculatedOvertimeAmount += dayVal.calculatedOvertimeAmount;
+        acc.totalTiffinAllowance += dayVal.tiffinBillAmount;
+        acc.totalNightAllowance += dayVal.nightBillAmount;
+        acc.totalHolidayAllowance += dayVal.holidayBillAmount;
+
+        if (!curr.isLocked && dayVal.calculatedResult) {
+          pendingAttendanceUpdates.push({
+            id: curr.id,
+            calculatedResult: dayVal.calculatedResult
+          });
+        }
+
         return acc;
       }, {
         absentDays: 0,
@@ -2055,6 +2226,12 @@ export async function recalculatePayroll(payrollId: string) {
     );
 
     revalidateBothPaths("hr/payroll");
+
+    if (pendingAttendanceUpdates.length > 0) {
+      batchSyncAttendancePolicyUpdates(pendingAttendanceUpdates).catch(err => {
+        console.error("Failed to sync attendance policy updates in background:", err);
+      });
+    }
 
     return { success: true, message: "Payroll recalculated successfully", totalAmount: grandTotalAmount };
   } catch (error) {

@@ -18,7 +18,7 @@ import {
 import { Prisma } from "@prisma/client";
 import { startOfDay, endOfDay } from "date-fns";
 import { getPayrollSettings, isConfiguredWeekend } from "@/lib/payroll-settings";
-import { applyDailyAttendancePolicyValues } from "@/lib/hr-payroll/attendance-policy-service";
+import { applyDailyAttendancePolicyValues, calculateDailyAttendancePolicyValues } from "@/lib/hr-payroll/attendance-policy-service";
 import { syncTimezoneFromDb } from "@/lib/hr/shift-utils";
 
 /**
@@ -793,8 +793,29 @@ export async function getAttendanceRecordsPaginated({
     const allAttendances = await prisma.attendance.findMany({
       where,
       include: {
-        employee: { select: { id: true, name: true, employeeCode: true, designation: true, biometricDeviceId: true } },
-        shift: { select: { id: true, name: true, startTime: true, endTime: true, breakStartTime: true, breakEndTime: true, breakType: true, breakDuration: true } }
+        employee: {
+          select: {
+            id: true,
+            name: true,
+            employeeCode: true,
+            designation: true,
+            biometricDeviceId: true,
+            salary: true,
+            warehouseId: true,
+            employeeType: {
+              include: {
+                salaryStructurePolicy: true,
+                attendancePolicy: true,
+                latePolicy: true,
+                overtimePolicy: true,
+                tiffinBillPolicy: true,
+                nightBillPolicy: true,
+                holidayBillPolicy: true,
+              }
+            }
+          }
+        },
+        shift: { select: { id: true, name: true, startTime: true, endTime: true, graceMinutes: true, lateAfter: true, halfDayAfter: true, otStartAfter: true, breakStartTime: true, breakEndTime: true, breakGraceMinutes: true, breakLateAfter: true, breakType: true, breakDuration: true } }
       }
     });
 
@@ -846,10 +867,126 @@ export async function getAttendanceRecordsPaginated({
       });
     }
 
+    const payrollSettings = await getPayrollSettings();
+    const weekends = payrollSettings?.calculation?.weekends || [0, 6];
+
     const total = allAttendances.length;
     const skip = (page - 1) * limit;
     const paginatedAttendances = allAttendances.slice(skip, skip + limit);
-    const serializedAttendances = paginatedAttendances.map(serializeAttendanceDecimals);
+
+    // Dynamically evaluate active policy calculations for unlocked rows
+    const enrichedAttendances = await Promise.all(
+      paginatedAttendances.map(async (att: any) => {
+        if (att.isLocked || !att.employee) {
+          return att;
+        }
+
+        const isWeekendDay = isConfiguredWeekend(new Date(att.date), weekends);
+        const holiday = await prisma.holiday.findFirst({
+          where: {
+            date: new Date(att.date),
+            status: "active",
+            isTrash: false,
+            OR: [
+              { warehouseId: null },
+              { warehouseId: att.employee.warehouseId }
+            ]
+          },
+          select: { id: true }
+        });
+        const isPublicHoliday = !!holiday;
+        const workedOnHoliday = (isWeekendDay || isPublicHoliday) && !!att.checkIn && !!att.checkOut;
+
+        const policies = att.employee.employeeType || {
+          name: "No Employee Type",
+          salaryStructurePolicy: null,
+          attendancePolicy: null,
+          latePolicy: null,
+          overtimePolicy: null,
+          tiffinBillPolicy: null,
+          nightBillPolicy: null,
+          holidayBillPolicy: null,
+        };
+
+        const grossSalary = att.employee.salary ? Number(att.employee.salary) : 0;
+        const activeShift = att.shift;
+
+        const res = calculateDailyAttendancePolicyValues({
+          attendance: att,
+          employee: att.employee,
+          employeeTypePolicies: policies,
+          shift: activeShift ? {
+            startTime: activeShift.startTime,
+            endTime: activeShift.endTime,
+            graceMinutes: activeShift.graceMinutes,
+            lateAfter: activeShift.lateAfter,
+            halfDayAfter: activeShift.halfDayAfter,
+            otStartAfter: activeShift.otStartAfter,
+            breakStartTime: activeShift.breakStartTime,
+            breakEndTime: activeShift.breakEndTime,
+            breakGraceMinutes: activeShift.breakGraceMinutes,
+            breakLateAfter: activeShift.breakLateAfter,
+            breakType: activeShift.breakType,
+            breakDuration: activeShift.breakDuration,
+          } : null,
+          isWeekend: isWeekendDay,
+          isPublicHoliday,
+          workedOnHoliday,
+          grossSalary,
+        });
+
+        // Check if database needs background sync
+        const dbOT = Number(att.calculatedOvertimeAmount) || 0;
+        const newOT = Number(res.calculatedOvertimeAmount) || 0;
+        const dbHoliday = Number(att.holidayBillAmount) || 0;
+        const newHoliday = Number(res.holidayBillAmount) || 0;
+        const dbLateCount = Number(att.lateCountValue) || 0;
+        const newLateCount = Number(res.lateCountValue) || 0;
+
+        if (
+          Math.abs(dbOT - newOT) > 0.01 || 
+          Math.abs(dbHoliday - newHoliday) > 0.01 || 
+          Math.abs(dbLateCount - newLateCount) > 0.01 ||
+          att.policyCalculationNote !== res.policyCalculationNote
+        ) {
+          prisma.attendance.update({
+            where: { id: att.id },
+            data: {
+              status: res.status as any,
+              workHours: new Prisma.Decimal(res.workHours),
+              otHours: new Prisma.Decimal(res.otHours),
+              lateMinutes: res.lateMinutes,
+              lateCountValue: new Prisma.Decimal(res.lateCountValue),
+              breakLateMinutes: res.breakLateMinutes,
+              breakLateCountValue: new Prisma.Decimal(res.breakLateCountValue),
+              tiffinBillAmount: new Prisma.Decimal(res.tiffinBillAmount),
+              nightBillAmount: new Prisma.Decimal(res.nightBillAmount),
+              holidayBillAmount: new Prisma.Decimal(res.holidayBillAmount),
+              calculatedOvertimeAmount: new Prisma.Decimal(res.calculatedOvertimeAmount),
+              policyCalculationNote: res.policyCalculationNote,
+            }
+          }).catch((err) => console.error(`Background attendance policy sync error for ${att.id}:`, err));
+        }
+
+        return {
+          ...att,
+          status: res.status,
+          workHours: new Prisma.Decimal(res.workHours),
+          otHours: new Prisma.Decimal(res.otHours),
+          lateMinutes: res.lateMinutes,
+          lateCountValue: new Prisma.Decimal(res.lateCountValue),
+          breakLateMinutes: res.breakLateMinutes,
+          breakLateCountValue: new Prisma.Decimal(res.breakLateCountValue),
+          tiffinBillAmount: new Prisma.Decimal(res.tiffinBillAmount),
+          nightBillAmount: new Prisma.Decimal(res.nightBillAmount),
+          holidayBillAmount: new Prisma.Decimal(res.holidayBillAmount),
+          calculatedOvertimeAmount: new Prisma.Decimal(res.calculatedOvertimeAmount),
+          policyCalculationNote: res.policyCalculationNote,
+        };
+      })
+    );
+
+    const serializedAttendances = enrichedAttendances.map(serializeAttendanceDecimals);
 
     return {
       success: true,
