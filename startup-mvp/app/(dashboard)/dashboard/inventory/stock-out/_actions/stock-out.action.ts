@@ -22,6 +22,7 @@ export interface CreateStockOutInput {
   warehouseId: string;
   date: Date;
   notes?: string;
+  workOrderId?: string | null;
   items: StockOutItemInput[];
 }
 
@@ -199,6 +200,7 @@ export async function createStockOut(input: CreateStockOutInput) {
         warehouseId: input.warehouseId,
         date: input.date,
         notes: input.notes,
+        workOrderId: input.workOrderId || null,
         status: StockOutStatus.DRAFT,
         createdById: session.user.id,
         items: {
@@ -379,6 +381,25 @@ export async function approveStockOut(id: string) {
         }
       }
       
+      // If tied to a WorkOrder, record WorkOrderMaterialOut entries
+      if (stockOut.workOrderId) {
+        for (const item of stockOut.items) {
+          const outCount = await tx.workOrderMaterialOut.count();
+          const outwardNo = `OUT-${new Date().getFullYear()}-${String(outCount + 1).padStart(4, "0")}`;
+          await tx.workOrderMaterialOut.create({
+            data: {
+              outwardNo,
+              workOrderId: stockOut.workOrderId,
+              itemId: item.itemId,
+              quantity: item.quantity,
+              unit: (item.item as any)?.unit?.symbol || "Pcs",
+              notes: `Stock Out: ${stockOut.stockOutNo}`,
+              issuedDate: stockOut.date,
+            },
+          });
+        }
+      }
+
       // Update Stock Out Status
       await tx.stockOut.update({
         where: { id },

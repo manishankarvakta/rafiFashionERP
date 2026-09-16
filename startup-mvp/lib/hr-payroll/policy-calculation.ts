@@ -622,6 +622,10 @@ export interface PayrollPolicyPreviewInput {
   shift?: {
     startTime: string;
     endTime: string;
+    breakType?: string;
+    breakDuration?: number;
+    breakStartTime?: string;
+    breakEndTime?: string;
   } | null;
   grossSalary: number;
   

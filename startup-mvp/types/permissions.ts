@@ -174,6 +174,7 @@ export const MODULES: Record<Module, ModuleMetadata> = {
     label: "Sales",
     description: "Sales and point of sale",
     subModules: [
+      { id: "orders", label: "Work Orders", path: "/dashboard/orders", module: "sales", permissionKey: "sales.orders" },
       { id: "sales", label: "Sales", path: "/dashboard/sales", module: "sales", permissionKey: "sales.sales" },
       { id: "pos", label: "POS", path: "/dashboard/sales/pos", module: "sales", permissionKey: "sales.pos" },
     ],
@@ -260,6 +261,7 @@ export const MODULES: Record<Module, ModuleMetadata> = {
     label: "Inventory",
     description: "Stock and inventory management",
     subModules: [
+      { id: "stock-in", label: "Stock In", path: "/dashboard/inventory/stock-in", module: "inventory", permissionKey: "inventory.stock-in" },
       { id: "stock", label: "Stock", path: "/dashboard/inventory/stock", module: "inventory", permissionKey: "inventory.stock" },
       { id: "adjustments", label: "Adjustments", path: "/dashboard/inventory/adjustments", module: "inventory", permissionKey: "inventory.adjustments" },
       { id: "damage", label: "Damage", path: "/dashboard/inventory/damage", module: "inventory", permissionKey: "inventory.damage" },
@@ -601,6 +603,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
     label: "Sales",
     pages: [
       {
+        permissionKey: "sales.orders",
+        path: "/dashboard/orders",
+        label: "Work Orders",
+        operations: ["view", "create", "edit", "approve", "move-to-trash", "delete-permanently"],
+      },
+      {
         permissionKey: "sales.sales",
         path: "/dashboard/sales",
         label: "Sales",
@@ -906,6 +914,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
     id: "inventory",
     label: "Inventory",
     pages: [
+      {
+        permissionKey: "inventory.stock-in",
+        path: "/dashboard/inventory/stock-in",
+        label: "Stock In",
+        operations: ["create", "view", "edit", "move-to-trash", "delete-permanently"],
+      },
       {
         permissionKey: "inventory.stock",
         path: "/dashboard/inventory/stock",

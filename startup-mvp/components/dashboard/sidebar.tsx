@@ -45,6 +45,7 @@ import {
   FiTag,
   FiAlertTriangle,
   FiAward,
+  FiInbox,
 } from "react-icons/fi";
 import Logo from "@/components/layout/logo";
 import { SlCalculator } from "react-icons/sl";
@@ -85,6 +86,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   FiRefreshCw,
   FiAlertTriangle,
   FiAward,
+  FiInbox,
   SlCalculator,
   MdOutlineCategory,
 };

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, AttendanceStatus } from "@prisma/client";
+import { differenceInMinutes } from "date-fns";
 import { getPayrollSettings, isConfiguredWeekend } from "@/lib/payroll-settings";
 import {
   calculateLateMinutes,
