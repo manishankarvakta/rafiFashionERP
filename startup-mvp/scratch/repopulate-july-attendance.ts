@@ -67,6 +67,7 @@ async function repopulateJulyAttendance() {
             checkOut: null,
             isManual: false
           });
+          // 
         } else {
           const rand = Math.random();
           let checkInHour = 3;
