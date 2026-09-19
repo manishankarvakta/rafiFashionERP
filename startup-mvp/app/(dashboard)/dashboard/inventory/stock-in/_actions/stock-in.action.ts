@@ -36,6 +36,46 @@ export interface CreateStockInInput {
   items: StockInItemInput[];
 }
 
+async function generateNextInwardNo(txOrPrisma: any): Promise<string> {
+  const currentYear = new Date().getFullYear();
+  const prefix = `INW-${currentYear}-`;
+
+  const existingRecords = await txOrPrisma.workOrderMaterialIn.findMany({
+    where: {
+      inwardNo: {
+        startsWith: prefix,
+      },
+    },
+    select: {
+      inwardNo: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  let maxSeq = 0;
+  for (const rec of existingRecords) {
+    const match = rec.inwardNo.match(/^INW-\d{4}-(\d+)/);
+    if (match && match[1]) {
+      const seq = parseInt(match[1], 10);
+      if (!isNaN(seq) && seq > maxSeq) {
+        maxSeq = seq;
+      }
+    }
+  }
+
+  let nextSeq = maxSeq + 1;
+  let candidate = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+
+  while (await txOrPrisma.workOrderMaterialIn.findUnique({ where: { inwardNo: candidate } })) {
+    nextSeq++;
+    candidate = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  }
+
+  return candidate;
+}
+
 export async function createStockIn(input: CreateStockInInput) {
   try {
     const session = await auth();
@@ -49,8 +89,7 @@ export async function createStockIn(input: CreateStockInInput) {
       return { success: false, error: "Please add at least one material item." };
     }
 
-    const count = await prisma.workOrderMaterialIn.count();
-    const inwardNo = `INW-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const inwardNo = await generateNextInwardNo(prisma);
     const receivedDate = input.receivedDate ? new Date(input.receivedDate) : new Date();
 
     // Find or create a default Raw Material Item if specific itemId is omitted
@@ -309,6 +348,15 @@ export async function getStockInFormData() {
           productionStatus: true,
           client: { select: { id: true, name: true, phone: true, company: true } },
           item: { select: { name: true } },
+          materialsIn: {
+            select: {
+              id: true,
+              materialName: true,
+              quantity: true,
+              unit: true,
+              item: { select: { name: true, code: true } },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       }),

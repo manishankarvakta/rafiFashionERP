@@ -20,10 +20,26 @@ export interface CreateWorkOrderInput {
   colorSpecs?: string | null;
   sizeBreakdown?: string | null;
   advanceAmount?: number | null;
-  targetQuantity: number;
-  unitPrice: number;
+  targetQuantity?: number | null;
+  unitPrice?: number | null;
   deliveryDeadline?: string | null;
   notes?: string | null;
+}
+
+export interface BatchWorkOrderItemInput {
+  itemId?: string | null;
+  orderTitle?: string | null;
+  styleNo?: string | null;
+  targetQuantity?: number | null;
+  unit?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateBatchWorkOrdersInput {
+  clientId: string;
+  deliveryDeadline?: string | null;
+  notes?: string | null;
+  items: BatchWorkOrderItemInput[];
 }
 
 export async function createWorkOrder(input: CreateWorkOrderInput) {
@@ -33,13 +49,14 @@ export async function createWorkOrder(input: CreateWorkOrderInput) {
       return { success: false, error: "Unauthorized" };
     }
 
-    if (!input.clientId || !input.targetQuantity || input.targetQuantity <= 0) {
-      return { success: false, error: "Please select a client and provide a valid target quantity." };
+    if (!input.clientId) {
+      return { success: false, error: "Please select a client." };
     }
 
     const count = await prisma.workOrder.count();
     const orderNo = `WO-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
-    const totalAmount = new Decimal(input.targetQuantity).mul(new Decimal(input.unitPrice || 0));
+    const targetQty = input.targetQuantity !== undefined && input.targetQuantity !== null ? Number(input.targetQuantity) : 0;
+    const totalAmount = new Decimal(targetQty).mul(new Decimal(input.unitPrice || 0));
 
     const workOrder = await prisma.workOrder.create({
       data: {
@@ -53,7 +70,7 @@ export async function createWorkOrder(input: CreateWorkOrderInput) {
         colorSpecs: input.colorSpecs || null,
         sizeBreakdown: input.sizeBreakdown || null,
         advanceAmount: new Decimal(input.advanceAmount || 0),
-        targetQuantity: input.targetQuantity,
+        targetQuantity: targetQty,
         unitPrice: new Decimal(input.unitPrice || 0),
         totalAmount,
         deliveryDeadline: input.deliveryDeadline ? new Date(input.deliveryDeadline) : null,
@@ -72,6 +89,80 @@ export async function createWorkOrder(input: CreateWorkOrderInput) {
   } catch (error: any) {
     console.error("createWorkOrder error:", error);
     return { success: false, error: error.message || "Failed to create work order" };
+  }
+}
+
+export async function createBatchWorkOrders(input: CreateBatchWorkOrdersInput) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    if (!input.clientId) {
+      return { success: false, error: "Please select a client." };
+    }
+
+    if (!input.items || input.items.length === 0) {
+      return { success: false, error: "Please add at least one ordered item." };
+    }
+
+    const createdOrders: any[] = [];
+
+    await prisma.$transaction(async (tx) => {
+      let count = await tx.workOrder.count();
+
+      for (const item of input.items) {
+        count++;
+        const orderNo = `WO-${new Date().getFullYear()}-${String(count).padStart(4, "0")}`;
+        const targetQty = item.targetQuantity !== undefined && item.targetQuantity !== null && item.targetQuantity !== 0
+          ? Number(item.targetQuantity) 
+          : 0;
+        
+        let itemTitle = item.orderTitle || null;
+        let itemUnit = item.unit || "Pcs";
+
+        if (item.itemId) {
+          const it = await tx.item.findUnique({
+            where: { id: item.itemId },
+            select: { name: true, unit: { select: { symbol: true } } }
+          });
+          if (it) {
+            if (!itemTitle) itemTitle = it.name;
+            if (it.unit?.symbol && (!item.unit || item.unit === "Pcs")) itemUnit = it.unit.symbol;
+          }
+        }
+
+        const wo = await tx.workOrder.create({
+          data: {
+            orderNo,
+            clientId: input.clientId,
+            itemId: item.itemId || null,
+            orderTitle: itemTitle,
+            styleNo: item.styleNo || null,
+            unit: itemUnit,
+            targetQuantity: targetQty,
+            unitPrice: new Decimal(0),
+            totalAmount: new Decimal(0),
+            deliveryDeadline: input.deliveryDeadline ? new Date(input.deliveryDeadline) : null,
+            notes: item.notes || input.notes || null,
+            createdBy: session.user.id,
+            productionStatus: WorkOrderStatus.PENDING,
+          },
+          include: {
+            client: { select: { id: true, name: true, phone: true } },
+            item: { select: { id: true, name: true, code: true } },
+          }
+        });
+        createdOrders.push(wo);
+      }
+    });
+
+    revalidateBothPaths("/dashboard/orders");
+    return { success: true, count: createdOrders.length, workOrders: serialize(createdOrders) };
+  } catch (error: any) {
+    console.error("createBatchWorkOrders error:", error);
+    return { success: false, error: error.message || "Failed to create work orders" };
   }
 }
 

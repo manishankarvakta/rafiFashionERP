@@ -7,7 +7,14 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 
-export default async function AddStockOutPage() {
+import { getWorkOrdersForStockOut } from "../_actions/stock-out.action";
+
+export default async function AddStockOutPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ workOrderId?: string }>;
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const session = await auth();
   const userContext = { isNormalUser: false, defaultWarehouseId: null as string | null };
 
@@ -22,9 +29,10 @@ export default async function AddStockOutPage() {
     }
   }
 
-  const [warehousesRes, itemsRes] = await Promise.all([
+  const [warehousesRes, itemsRes, workOrdersRes] = await Promise.all([
     getWarehouses(1, 100),
-    getActiveItems()
+    getActiveItems(),
+    getWorkOrdersForStockOut(),
   ]);
 
   return (
@@ -42,6 +50,8 @@ export default async function AddStockOutPage() {
       <StockOutForm 
         warehouses={warehousesRes.success ? warehousesRes.warehouses : []}
         items={itemsRes.success ? itemsRes.items : []}
+        workOrders={workOrdersRes.success ? workOrdersRes.workOrders : []}
+        initialWorkOrderId={resolvedSearchParams.workOrderId}
         userContext={userContext}
       />
     </div>

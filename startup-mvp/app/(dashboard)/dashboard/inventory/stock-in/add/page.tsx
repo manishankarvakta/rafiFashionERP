@@ -136,6 +136,13 @@ export default function CreateStockInPage() {
       return;
     }
 
+    // Duplicate check in material rows
+    const itemIds = validRows.map((r) => r.itemId);
+    if (new Set(itemIds).size !== itemIds.length) {
+      toast.error("Duplicate raw material items detected in the list. Please combine them into a single row with the total quantity.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const res = await createStockIn({
@@ -235,11 +242,17 @@ export default function CreateStockInPage() {
                   disabled={loadingInit}
                 >
                   <option value="">-- General Stock In (No Specific Order) --</option>
-                  {workOrders.map((wo) => (
-                    <option key={wo.id} value={wo.id}>
-                      {wo.orderNo} • {wo.item?.name || wo.orderTitle || "Order"} - {wo.client?.name || "Client"}
-                    </option>
-                  ))}
+                  {workOrders.map((wo) => {
+                    const receivedCount = wo.materialsIn?.length || 0;
+                    const statusLabel = receivedCount > 0 
+                      ? `[Received: ${receivedCount} items]` 
+                      : `[Pending Material]`;
+                    return (
+                      <option key={wo.id} value={wo.id}>
+                        {wo.orderNo} {statusLabel} • {wo.item?.name || wo.orderTitle || "Order"} - {wo.client?.name || "Client"}
+                      </option>
+                    );
+                  })}
                 </select>
                 <p className="text-[11px] text-muted-foreground">Select an order to link raw materials to its client.</p>
               </div>
@@ -269,7 +282,7 @@ export default function CreateStockInPage() {
 
             {/* Auto-detected Client Info Box */}
             {selectedWorkOrder && (
-              <div className="p-3.5 bg-primary/5 border border-primary/20 rounded-lg text-xs space-y-1.5">
+              <div className="p-3.5 bg-primary/5 border border-primary/20 rounded-lg text-xs space-y-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <FiUser className="text-primary h-4 w-4" />
@@ -290,6 +303,19 @@ export default function CreateStockInPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Existing Materials Inward Alert if any */}
+                {selectedWorkOrder.materialsIn && selectedWorkOrder.materialsIn.length > 0 && (
+                  <div className="pt-2 border-t border-primary/10 flex items-start gap-2 text-[11px] text-amber-800 dark:text-amber-300">
+                    <FiInfo className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <strong className="font-semibold">Previously Received Materials: </strong>
+                      <span>
+                        {selectedWorkOrder.materialsIn.map((m: any) => `${m.item?.name || m.materialName || 'Material'}: ${m.quantity} ${m.unit}`).join(", ")}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

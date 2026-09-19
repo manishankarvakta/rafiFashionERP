@@ -504,11 +504,18 @@ export default function OrderDetailPage() {
                     Comparison of received raw materials (Stock In) vs materials issued for production (Stock Out).
                   </CardDescription>
                 </div>
-                <Link href="/dashboard/inventory/stock-in/add">
-                  <Button variant="outline" size="sm" className="gap-1.5 text-xs bg-white border-gray-300 text-gray-700 hover:bg-gray-50 shadow-sm font-medium">
-                    <FiPlus /> New Stock In
-                  </Button>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link href="/dashboard/inventory/stock-in/add">
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs bg-white border-gray-300 text-gray-700 hover:bg-gray-50 shadow-sm font-medium">
+                      <FiPlus /> New Stock In
+                    </Button>
+                  </Link>
+                  <Link href={`/dashboard/inventory/stock-out/add?workOrderId=${order.id}`}>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs bg-white border-amber-300 text-amber-900 hover:bg-amber-50 shadow-sm font-medium">
+                      <FiArrowUpRight /> New Stock Out
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </CardHeader>
 

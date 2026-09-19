@@ -4,14 +4,24 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
-  FiArrowLeft, FiSave, FiLayers, FiUser, FiPackage, FiInfo, FiCheckCircle
+  FiArrowLeft, FiSave, FiLayers, FiUser, FiPackage, FiInfo, FiCheckCircle, FiPlus, FiTrash2
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
-import { createWorkOrder, getClientsAndItemsForSelect } from "../_actions/work-order.action";
+import { createBatchWorkOrders, getClientsAndItemsForSelect } from "../_actions/work-order.action";
+
+interface OrderItemRow {
+  id: string;
+  itemId: string;
+  orderTitle?: string;
+  styleNo?: string;
+  quantity: string | number;
+  unit?: string;
+  notes?: string;
+}
 
 export default function CreateWorkOrderPage() {
   const router = useRouter();
@@ -21,13 +31,19 @@ export default function CreateWorkOrderPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State
-  const [formData, setFormData] = useState({
-    clientId: "",
-    itemId: "",
-    targetQuantity: 100,
-    unit: "Pcs",
-    deliveryDeadline: "",
-  });
+  const [clientId, setClientId] = useState("");
+  const [deliveryDeadline, setDeliveryDeadline] = useState("");
+  const [generalNotes, setGeneralNotes] = useState("");
+
+  const [orderRows, setOrderRows] = useState<OrderItemRow[]>([
+    {
+      id: "row-" + Date.now(),
+      itemId: "",
+      quantity: "",
+      unit: "Pcs",
+      notes: "",
+    }
+  ]);
 
   useEffect(() => {
     async function loadData() {
@@ -47,49 +63,92 @@ export default function CreateWorkOrderPage() {
   // Fallback to all items if no item is marked specifically as READY_PRODUCT yet
   const selectableProducts = readyProductItems.length > 0 ? readyProductItems : items;
 
-  const handleChange = (field: string, value: any) => {
-    setFormData((prev) => {
-      const updated = { ...prev, [field]: value };
-      if (field === "itemId") {
-        const selectedItem = items.find((it) => it.id === value);
-        if (selectedItem?.unit?.symbol) {
-          updated.unit = selectedItem.unit.symbol;
-        }
+  const selectedClient = clients.find((c) => c.id === clientId);
+
+  const handleAddRow = () => {
+    setOrderRows((prev) => [
+      ...prev,
+      {
+        id: "row-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+        itemId: "",
+        quantity: "",
+        unit: "Pcs",
+        notes: "",
       }
-      return updated;
-    });
+    ]);
   };
+
+  const handleRemoveRow = (id: string) => {
+    if (orderRows.length === 1) {
+      toast.error("At least one product item is required.");
+      return;
+    }
+    setOrderRows((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const handleRowChange = (id: string, field: keyof OrderItemRow, value: any) => {
+    setOrderRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        const updated = { ...row, [field]: value };
+        if (field === "itemId") {
+          const selectedItem = items.find((it) => it.id === value);
+          if (selectedItem?.unit?.symbol) {
+            updated.unit = selectedItem.unit.symbol;
+          }
+          if (selectedItem?.name && !updated.orderTitle) {
+            updated.orderTitle = selectedItem.name;
+          }
+        }
+        return updated;
+      })
+    );
+  };
+
+  const totalTargetQty = orderRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.clientId) {
-      toast.error("Please select a client.");
+    if (!clientId) {
+      toast.error("Please select a client / customer.");
       return;
     }
 
-    if (!formData.targetQuantity || Number(formData.targetQuantity) <= 0) {
-      toast.error("Please enter a valid target quantity.");
+    const validRows = orderRows.filter((r) => r.itemId || r.orderTitle || (Number(r.quantity) > 0));
+    if (validRows.length === 0) {
+      toast.error("Please add at least one ready product or garment item.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const res = await createWorkOrder({
-        clientId: formData.clientId,
-        itemId: formData.itemId || null,
-        targetQuantity: Number(formData.targetQuantity),
-        unit: formData.unit || "Pcs",
-        unitPrice: 0,
-        advanceAmount: 0,
-        deliveryDeadline: formData.deliveryDeadline ? new Date(formData.deliveryDeadline).toISOString() : null,
+      const res = await createBatchWorkOrders({
+        clientId,
+        deliveryDeadline: deliveryDeadline ? new Date(deliveryDeadline).toISOString() : null,
+        notes: generalNotes.trim() || null,
+        items: validRows.map((r) => {
+          const itemObj = items.find((it) => it.id === r.itemId);
+          return {
+            itemId: r.itemId || null,
+            orderTitle: r.orderTitle || itemObj?.name || null,
+            styleNo: r.styleNo || itemObj?.code || null,
+            targetQuantity: r.quantity !== "" && r.quantity !== undefined && r.quantity !== null ? Number(r.quantity) : 0,
+            unit: r.unit || itemObj?.unit?.symbol || "Pcs",
+            notes: r.notes?.trim() || null,
+          };
+        }),
       });
 
-      if (res.success && res.workOrder) {
-        toast.success(`Work Order ${res.workOrder.orderNo} created successfully!`);
+      if (res.success && res.workOrders) {
+        toast.success(
+          res.count === 1
+            ? `Work Order ${res.workOrders[0].orderNo} created successfully!`
+            : `Successfully created ${res.count} work orders for this client!`
+        );
         router.push("/dashboard/orders");
       } else {
-        toast.error(res.error || "Failed to create work order.");
+        toast.error(res.error || "Failed to create work orders.");
       }
     } catch (error: any) {
       console.error("Create order submit error:", error);
@@ -99,178 +158,276 @@ export default function CreateWorkOrderPage() {
     }
   };
 
-  const selectedClient = clients.find((c) => c.id === formData.clientId);
-  const selectedProduct = items.find((it) => it.id === formData.itemId);
-
   return (
-    <div className="max-w-5xl mx-auto space-y-6 p-4 sm:p-6 pb-20">
+    <div className="max-w-6xl mx-auto space-y-6 p-4 sm:p-6 pb-20 bg-gray-50/50 min-h-screen">
       {/* Header & Navigation */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
         <div className="flex items-center gap-3">
           <Link href="/dashboard/orders">
-            <Button variant="outline" size="icon" className="h-9 w-9">
+            <Button variant="outline" size="icon" className="h-9 w-9 border-gray-300">
               <FiArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white flex items-center gap-2">
-              <FiLayers className="text-primary" />
+            <h1 className="text-xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+              <FiLayers className="text-gray-700" />
               Create Work Order
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Register a new client manufacturing order with linked ready product.
+            <p className="text-xs text-gray-500">
+              Register manufacturing orders and ready products for customer.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <Link href="/dashboard/orders">
-            <Button variant="ghost" disabled={isSubmitting}>
+            <Button variant="ghost" disabled={isSubmitting} className="text-gray-600">
               Cancel
             </Button>
           </Link>
           <Button 
             onClick={handleSubmit} 
             disabled={isSubmitting || loadingInit}
-            className="gap-2 shadow-sm"
+            className="gap-2 px-6 bg-gray-900 hover:bg-black text-white font-medium shadow-sm"
           >
             <FiSave className="h-4 w-4" />
-            {isSubmitting ? "Creating Order..." : "Save Work Order"}
+            {isSubmitting ? "Creating..." : "Save Work Order"}
           </Button>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Client & Product Information */}
-        <Card className="border shadow-sm">
-          <CardHeader className="pb-4 border-b bg-muted/20">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <FiUser className="text-primary" />
-              Client & Ordered Product
+        {/* Card 1: Client & Timeline Information (Full Width) */}
+        <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
+          <CardHeader className="bg-white border-b border-gray-100 pb-4">
+            <CardTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <FiUser className="text-gray-700" />
+              1. Client & Timeline Information
             </CardTitle>
-            <CardDescription>
-              Select the customer and link the Ready Product being manufactured.
+            <CardDescription className="text-xs text-gray-500 mt-0.5">
+              Select the client / customer placing the manufacturing order.
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Client Select */}
-            <div className="space-y-2">
-              <Label htmlFor="clientId" className="font-semibold text-gray-800 dark:text-gray-200">
-                Client / Customer <span className="text-red-500">*</span>
+          <CardContent className="p-6 space-y-4">
+            {/* Full-Width Client Selector */}
+            <div className="space-y-1.5">
+              <Label htmlFor="clientId" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Select Client / Customer <span className="text-red-500">*</span>
               </Label>
               <select
                 id="clientId"
                 required
-                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={formData.clientId}
-                onChange={(e) => handleChange("clientId", e.target.value)}
+                className="w-full h-10 px-3 rounded-md border border-gray-300 bg-white text-sm text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
                 disabled={loadingInit}
               >
-                <option value="">-- Select Client --</option>
+                <option value="">-- Select Client / Customer --</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.company ? `(${c.company})` : ""} {c.phone ? `- ${c.phone}` : ""}
                   </option>
                 ))}
               </select>
+
+              {/* Client Info Banner */}
               {selectedClient && (
-                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                  <FiInfo className="text-sky-500" /> Client Contact: {selectedClient.phone || "No phone"} | Company: {selectedClient.company || "Individual"}
-                </p>
+                <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-700 flex flex-wrap items-center gap-4">
+                  <div>
+                    <span className="text-gray-400 block font-medium">Customer Name</span>
+                    <strong className="text-gray-900">{selectedClient.name}</strong>
+                  </div>
+                  {selectedClient.phone && (
+                    <div className="border-l border-gray-200 pl-4">
+                      <span className="text-gray-400 block font-medium">Phone</span>
+                      <strong className="text-gray-900">{selectedClient.phone}</strong>
+                    </div>
+                  )}
+                  {selectedClient.company && (
+                    <div className="border-l border-gray-200 pl-4">
+                      <span className="text-gray-400 block font-medium">Company</span>
+                      <strong className="text-gray-900">{selectedClient.company}</strong>
+                    </div>
+                  )}
+                  {selectedClient.address && (
+                    <div className="border-l border-gray-200 pl-4">
+                      <span className="text-gray-400 block font-medium">Address</span>
+                      <span className="text-gray-700">{selectedClient.address}</span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Ready Product Select */}
-            <div className="space-y-2">
-              <Label htmlFor="itemId" className="font-semibold text-gray-800 dark:text-gray-200">
-                Ordered Ready Product (Garment)
-              </Label>
-              <select
-                id="itemId"
-                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={formData.itemId}
-                onChange={(e) => handleChange("itemId", e.target.value)}
-                disabled={loadingInit}
-              >
-                <option value="">-- Select Ready Product / Garment --</option>
-                {selectableProducts.map((it) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name} ({it.code}) {it.category?.name ? `• ${it.category.name}` : ""}
-                  </option>
-                ))}
-              </select>
-              {selectedProduct && (
-                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                  <FiPackage className="text-emerald-500" /> Linked Item Code: <strong>{selectedProduct.code}</strong>
-                </p>
-              )}
-            </div>
-
-            {/* Target Quantity & Unit */}
-            <div className="space-y-2">
-              <Label htmlFor="targetQuantity" className="font-semibold text-gray-800 dark:text-gray-200">
-                Order Quantity & Unit <span className="text-red-500">*</span>
-              </Label>
-              <div className="flex gap-2">
+            {/* Delivery Deadline & General Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="deliveryDeadline" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Expected Delivery Deadline (Optional)
+                </Label>
                 <Input
-                  id="targetQuantity"
-                  type="number"
-                  min="1"
-                  required
-                  placeholder="e.g. 500"
-                  className="font-bold flex-1"
-                  value={formData.targetQuantity}
-                  onChange={(e) => handleChange("targetQuantity", e.target.value)}
+                  id="deliveryDeadline"
+                  type="date"
+                  className="h-10 text-xs border-gray-300 focus:ring-gray-900"
+                  value={deliveryDeadline}
+                  onChange={(e) => setDeliveryDeadline(e.target.value)}
                 />
-                <select
-                  id="unit"
-                  className="w-32 h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  value={formData.unit}
-                  onChange={(e) => handleChange("unit", e.target.value)}
-                >
-                  <option value="Pcs">Pcs</option>
-                  <option value="Dozen">Dozen</option>
-                  <option value="Sets">Sets</option>
-                  <option value="Pairs">Pairs</option>
-                  <option value="Kg">Kg</option>
-                  <option value="Yards">Yards</option>
-                  <option value="Meters">Meters</option>
-                </select>
               </div>
-            </div>
 
-            {/* Delivery Deadline */}
-            <div className="space-y-2">
-              <Label htmlFor="deliveryDeadline" className="font-semibold text-gray-800 dark:text-gray-200">
-                Expected Delivery Deadline
-              </Label>
-              <Input
-                id="deliveryDeadline"
-                type="date"
-                value={formData.deliveryDeadline}
-                onChange={(e) => handleChange("deliveryDeadline", e.target.value)}
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor="generalNotes" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  Order Remarks / Notes (Optional)
+                </Label>
+                <Input
+                  id="generalNotes"
+                  placeholder="e.g. Client requested express delivery..."
+                  className="h-10 text-xs border-gray-300 focus:ring-gray-900"
+                  value={generalNotes}
+                  onChange={(e) => setGeneralNotes(e.target.value)}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Bottom Actions */}
+        {/* Card 2: Ordered Items / Garments List (Multi-row Table) */}
+        <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
+          <CardHeader className="bg-white border-b border-gray-100 pb-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <FiPackage className="text-gray-700" />
+                2. Ordered Ready Products & Garments
+              </CardTitle>
+              <CardDescription className="text-xs text-gray-500 mt-0.5">
+                Add one or multiple products ordered by this client.
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddRow}
+              className="gap-1.5 text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
+            >
+              <FiPlus /> Add Product
+            </Button>
+          </CardHeader>
+
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+              <table className="w-full text-left text-xs border-collapse bg-white">
+                <thead className="bg-gray-50 border-b border-gray-200 font-semibold text-gray-700">
+                  <tr>
+                    <th className="p-3 w-10 text-center">#</th>
+                    <th className="p-3 min-w-[280px]">Ready Product / Garment *</th>
+                    <th className="p-3 w-40">Quantity (Optional)</th>
+                    <th className="p-3 min-w-[200px]">Item Notes / Remarks</th>
+                    <th className="p-3 w-10 text-center"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {orderRows.map((row, idx) => {
+                    return (
+                      <tr key={row.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="p-3 text-center text-gray-400 font-mono">{idx + 1}</td>
+                        
+                        {/* Ready Product Dropdown */}
+                        <td className="p-3">
+                          <select
+                            required
+                            className="w-full h-9 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 font-medium"
+                            value={row.itemId}
+                            onChange={(e) => handleRowChange(row.id, "itemId", e.target.value)}
+                          >
+                            <option value="">-- Select Ready Product / Garment --</option>
+                            {selectableProducts.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name} ({item.code}) {item.category?.name ? `• ${item.category.name}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Quantity (Optional) */}
+                        <td className="p-3">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            placeholder="0 (Optional)"
+                            className="h-9 text-xs font-bold border-gray-300 focus:ring-gray-900"
+                            value={row.quantity}
+                            onChange={(e) => handleRowChange(row.id, "quantity", e.target.value)}
+                          />
+                        </td>
+
+                        {/* Row Notes */}
+                        <td className="p-3">
+                          <Input
+                            placeholder="e.g. Size M & L, White color..."
+                            className="h-9 text-xs text-gray-700 border-gray-300 focus:ring-gray-900"
+                            value={row.notes || ""}
+                            onChange={(e) => handleRowChange(row.id, "notes", e.target.value)}
+                          />
+                        </td>
+
+                        {/* Delete Row */}
+                        <td className="p-3 text-center">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveRow(row.id)}
+                            className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                          >
+                            <FiTrash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom Actions & Summary */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddRow}
+                className="gap-1.5 text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
+              >
+                <FiPlus /> Add Another Product
+              </Button>
+
+              <div className="flex items-center gap-6 text-xs text-gray-700">
+                <span>Total Products: <strong className="text-gray-900">{orderRows.length}</strong></span>
+                <span>Total Quantity: <strong className="text-gray-900 text-sm font-bold">{totalTargetQty.toLocaleString()} Pcs</strong></span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bottom Submit Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <Link href="/dashboard/orders">
-            <Button variant="outline" type="button" disabled={isSubmitting}>
+            <Button variant="outline" type="button" disabled={isSubmitting} className="border-gray-300">
               Cancel
             </Button>
           </Link>
           <Button 
             type="submit" 
             disabled={isSubmitting || loadingInit}
-            className="gap-2 px-6 shadow-sm"
+            className="gap-2 px-8 bg-gray-900 hover:bg-black text-white font-medium shadow-sm"
           >
             <FiCheckCircle className="h-4 w-4" />
-            {isSubmitting ? "Creating Order..." : "Create Work Order"}
+            {isSubmitting ? "Creating Orders..." : "Save Work Order"}
           </Button>
         </div>
       </form>
     </div>
   );
 }
+

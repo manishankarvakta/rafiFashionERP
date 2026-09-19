@@ -1,7 +1,6 @@
 import React from "react";
 import { getWarehouses } from "../../../../master/warehouses/_actions/warehouse.action";
-import { getActiveItems } from "../../../stock/_actions/stock.action";
-import { getStockOut } from "../../_actions/stock-out.action";
+import { getStockOut, getWorkOrdersForStockOut } from "../../_actions/stock-out.action";
 import StockOutForm from "../../add/_components/stock-out-form";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -35,9 +34,10 @@ export default async function EditStockOutPage({ params }: { params: Promise<{ i
     return redirect(`/dashboard/inventory/stock-out/${resolvedParams.id}`);
   }
 
-  const [warehousesRes, itemsRes] = await Promise.all([
+  const [warehousesRes, itemsRes, workOrdersRes] = await Promise.all([
     getWarehouses(1, 100),
-    getActiveItems()
+    getActiveItems(),
+    getWorkOrdersForStockOut(),
   ]);
 
   return (
@@ -55,6 +55,7 @@ export default async function EditStockOutPage({ params }: { params: Promise<{ i
       <StockOutForm 
         warehouses={warehousesRes.success ? warehousesRes.warehouses : []}
         items={itemsRes.success ? itemsRes.items : []}
+        workOrders={workOrdersRes.success ? workOrdersRes.workOrders : []}
         userContext={userContext}
         initialData={stockOutRes.stockOut}
       />

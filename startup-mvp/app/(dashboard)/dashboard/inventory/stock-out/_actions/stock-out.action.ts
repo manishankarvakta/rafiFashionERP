@@ -115,6 +115,143 @@ export async function getStockOuts(
   }
 }
 
+export async function getWorkOrdersForStockOut() {
+  try {
+    const session = await auth();
+    if (!session?.user) return { success: false, error: "Unauthorized" };
+
+    const workOrders = await prisma.workOrder.findMany({
+      where: { isTrash: false },
+      select: {
+        id: true,
+        orderNo: true,
+        orderTitle: true,
+        styleNo: true,
+        client: { select: { id: true, name: true, company: true, phone: true } },
+        item: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    return { success: true, workOrders: serialize(workOrders) };
+  } catch (error: any) {
+    console.error("getWorkOrdersForStockOut error:", error);
+    return { success: false, error: "Failed to fetch work orders" };
+  }
+}
+
+export async function getOrderMaterialsBalance(workOrderId: string) {
+  try {
+    const session = await auth();
+    if (!session?.user) return { success: false, error: "Unauthorized" };
+
+    const order = await prisma.workOrder.findUnique({
+      where: { id: workOrderId },
+      include: {
+        client: { select: { id: true, name: true, company: true, phone: true } },
+        materialsIn: {
+          include: {
+            item: { select: { id: true, name: true, code: true, costPrice: true, unit: { select: { symbol: true } } } },
+          },
+          orderBy: { receivedDate: "desc" },
+        },
+        materialsOut: {
+          include: {
+            item: { select: { id: true, name: true, code: true, unit: { select: { symbol: true } } } },
+          },
+          orderBy: { issuedDate: "desc" },
+        },
+      },
+    });
+
+    if (!order) {
+      return { success: false, error: "Work order not found" };
+    }
+
+    // Calculate balance per item
+    const summaryMap = new Map<string, {
+      itemId: string;
+      itemName: string;
+      itemCode: string;
+      unit: string;
+      unitCost: number;
+      totalIn: number;
+      totalOut: number;
+      balance: number;
+    }>();
+
+    for (const mat of order.materialsIn) {
+      const key = mat.itemId;
+      const name = mat.item?.name || mat.materialName || "Raw Material";
+      const code = mat.item?.code || "";
+      const unit = mat.unit || mat.item?.unit?.symbol || "Pcs";
+      const qty = Number(mat.quantity || 0);
+      const cost = Number(mat.unitCost || mat.item?.costPrice || 0);
+
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, {
+          itemId: key,
+          itemName: name,
+          itemCode: code,
+          unit,
+          unitCost: cost,
+          totalIn: qty,
+          totalOut: 0,
+          balance: qty,
+        });
+      } else {
+        const entry = summaryMap.get(key)!;
+        entry.totalIn += qty;
+        entry.balance = entry.totalIn - entry.totalOut;
+      }
+    }
+
+    for (const mat of order.materialsOut) {
+      const key = mat.itemId;
+      const qty = Number(mat.quantity || 0);
+      if (summaryMap.has(key)) {
+        const entry = summaryMap.get(key)!;
+        entry.totalOut += qty;
+        entry.balance = entry.totalIn - entry.totalOut;
+      } else {
+        const name = mat.item?.name || "Raw Material";
+        const code = mat.item?.code || "";
+        const unit = mat.unit || mat.item?.unit?.symbol || "Pcs";
+        summaryMap.set(key, {
+          itemId: key,
+          itemName: name,
+          itemCode: code,
+          unit,
+          unitCost: 0,
+          totalIn: 0,
+          totalOut: qty,
+          balance: -qty,
+        });
+      }
+    }
+
+    const materials = Array.from(summaryMap.values());
+
+    return {
+      success: true,
+      order: {
+        id: order.id,
+        orderNo: order.orderNo,
+        orderTitle: order.orderTitle,
+        styleNo: order.styleNo,
+        client: order.client,
+      },
+      materials: serialize(materials),
+      materialsIn: serialize(order.materialsIn),
+      materialsOut: serialize(order.materialsOut),
+    };
+  } catch (error: any) {
+    console.error("getOrderMaterialsBalance error:", error);
+    return { success: false, error: "Failed to fetch order materials balance" };
+  }
+}
+
 export async function getStockOut(id: string) {
   try {
     const session = await auth();
@@ -127,6 +264,15 @@ export async function getStockOut(id: string) {
       where: { id },
       include: {
         warehouse: true,
+        workOrder: {
+          select: {
+            id: true,
+            orderNo: true,
+            orderTitle: true,
+            styleNo: true,
+            client: { select: { id: true, name: true, company: true, phone: true } },
+          }
+        },
         items: {
           include: {
             item: {
@@ -256,6 +402,7 @@ export async function updateStockOut(id: string, input: CreateStockOutInput) {
           warehouseId: input.warehouseId,
           date: input.date,
           notes: input.notes,
+          workOrderId: input.workOrderId || null,
           items: {
             create: input.items.map(item => {
               const qty = Math.abs(item.quantity);
@@ -276,6 +423,10 @@ export async function updateStockOut(id: string, input: CreateStockOutInput) {
 
     await logItemUpdated(session.user.id, "StockOut", id, ["Updated draft stock out record"]);
     revalidateBothPaths("/dashboard/inventory/stock-out");
+    if (input.workOrderId) {
+      revalidateBothPaths(`/dashboard/orders/${input.workOrderId}`);
+      revalidateBothPaths("/dashboard/orders");
+    }
 
     return { success: true };
   } catch (error) {
@@ -294,7 +445,7 @@ export async function approveStockOut(id: string) {
 
     const stockOut = await prisma.stockOut.findUnique({
       where: { id },
-      include: { items: { include: { item: true } }, warehouse: true }
+      include: { items: { include: { item: { include: { unit: true } } } }, warehouse: true }
     });
 
     if (!stockOut) return { success: false, error: "Stock out record not found" };
@@ -428,6 +579,10 @@ export async function approveStockOut(id: string) {
 
     await logItemUpdated(session.user.id, "StockOut", stockOut.id, ["Approved and Posted Stock Out"]);
     revalidateBothPaths("/dashboard/inventory/stock-out");
+    if (stockOut.workOrderId) {
+      revalidateBothPaths(`/dashboard/orders/${stockOut.workOrderId}`);
+      revalidateBothPaths("/dashboard/orders");
+    }
     
     return { success: true };
 
