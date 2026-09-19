@@ -144,6 +144,10 @@ const formSchema = z.object({
   absentDeductionMode:     z.enum(["calendar", "working"]),
   absentDeductionBasis:    z.enum(["GROSS", "BASIC"]),
   standardWorkingDays:     z.number().int().min(20).max(31),
+  enableWorkHoursThresholds: z.boolean().optional(),
+  minHoursForFullDay:      z.number().min(1).max(24),
+  minHoursForHalfDay:      z.number().min(0.5).max(24),
+  halfDayGrossSalaryPayPercentage: z.number().min(0).max(100),
   defaultHouseRentPct:     z.number().min(0).max(100),
   defaultMedicalPct:       z.number().min(0).max(100),
   defaultTransportPct:     z.number().min(0).max(100),
@@ -512,6 +516,10 @@ export default function PayrollSettings() {
       absentDeductionMode:     "calendar",
       absentDeductionBasis:    "BASIC",
       standardWorkingDays:     26,
+      enableWorkHoursThresholds: true,
+      minHoursForFullDay:      8,
+      minHoursForHalfDay:      4,
+      halfDayGrossSalaryPayPercentage: 50,
       defaultHouseRentPct:     0,
       defaultMedicalPct:       0,
       defaultTransportPct:     0,
@@ -598,6 +606,10 @@ export default function PayrollSettings() {
           absentDeductionMode:     s.calculation.absentDeductionMode,
           absentDeductionBasis:    s.calculation.absentDeductionBasis || "BASIC",
           standardWorkingDays:     s.calculation.standardWorkingDays,
+          enableWorkHoursThresholds: s.calculation.enableWorkHoursThresholds ?? true,
+          minHoursForFullDay:      s.calculation.minHoursForFullDay ?? 8,
+          minHoursForHalfDay:      s.calculation.minHoursForHalfDay ?? 4,
+          halfDayGrossSalaryPayPercentage: s.calculation.halfDayGrossSalaryPayPercentage ?? 50,
           defaultHouseRentPct:     s.calculation.defaultHouseRentPct,
           defaultMedicalPct:       s.calculation.defaultMedicalPct,
           defaultTransportPct:     s.calculation.defaultTransportPct,
@@ -681,6 +693,11 @@ export default function PayrollSettings() {
             absentDeductionMode:     data.absentDeductionMode,
             absentDeductionBasis:    data.absentDeductionBasis,
             standardWorkingDays:     data.standardWorkingDays,
+            enableWorkHoursThresholds: data.enableWorkHoursThresholds ?? true,
+            minHoursForFullDay:      data.minHoursForFullDay,
+            minHoursForHalfDay:      data.minHoursForHalfDay,
+            halfDayGrossSalaryPayPercentage: data.halfDayGrossSalaryPayPercentage,
+            halfDayCalculationBasis: "GROSS",
             defaultHouseRentPct:     data.defaultHouseRentPct,
             defaultMedicalPct:       data.defaultMedicalPct,
             defaultTransportPct:     data.defaultTransportPct,
@@ -2772,7 +2789,7 @@ export default function PayrollSettings() {
                               <div>
                                 <p className="text-sm font-medium">{basis === "BASIC" ? "Basic Salary Basis (55%)" : "Total Gross Salary Basis (100%)"}</p>
                                 <p className="text-xs text-muted-foreground mt-0.5">
-                                  {basis === "BASIC"
+                                   {basis === "BASIC"
                                     ? "Daily rate = Basic Salary ÷ month days (Executive / Corporate Standard)"
                                     : "Daily rate = Total Gross Salary ÷ month days (Garments / Industrial Standard)"}
                                 </p>
@@ -2781,6 +2798,84 @@ export default function PayrollSettings() {
                           ))}
                         </>
                       )} />
+                    </div>
+                  </div>
+
+                  {/* Working Hours & Half-Day Rules (Gross Salary Basis) */}
+                  <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-primary" />
+                          Working Hours & Half-Day Rules (Gross Salary Basis)
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Automatically classify attendance as Full Day, Half Day, or Absent based on actual hours worked.
+                        </p>
+                      </div>
+                      <Controller
+                        name="enableWorkHoursThresholds"
+                        control={control}
+                        render={({ field }) => (
+                          <div className="flex items-center gap-2">
+                            <Switch checked={field.value ?? true} onCheckedChange={field.onChange} />
+                            <Label className="text-xs font-medium">Auto Thresholds</Label>
+                          </div>
+                        )}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Full Day Minimum (Hours)</Label>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min="1"
+                            max="24"
+                            {...register("minHoursForFullDay", { valueAsNumber: true })}
+                            className="h-9 bg-background"
+                          />
+                          <span className="text-sm text-muted-foreground shrink-0">hrs</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">Work hours &ge; this are marked <strong>PRESENT</strong>.</p>
+                        {errors.minHoursForFullDay && <p className="text-xs text-destructive">{errors.minHoursForFullDay.message}</p>}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Half Day Minimum (Hours)</Label>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min="0.5"
+                            max="24"
+                            {...register("minHoursForHalfDay", { valueAsNumber: true })}
+                            className="h-9 bg-background"
+                          />
+                          <span className="text-sm text-muted-foreground shrink-0">hrs</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">Below this is marked <strong>ABSENT</strong>.</p>
+                        {errors.minHoursForHalfDay && <p className="text-xs text-destructive">{errors.minHoursForHalfDay.message}</p>}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Half Day Gross Salary Pay (%)</Label>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="1"
+                            min="0"
+                            max="100"
+                            {...register("halfDayGrossSalaryPayPercentage", { valueAsNumber: true })}
+                            className="h-9 bg-background"
+                          />
+                          <span className="text-sm text-muted-foreground shrink-0">%</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">% of Daily <strong>Gross Salary</strong> paid (Deducts {100 - (watch("halfDayGrossSalaryPayPercentage") || 50)}%).</p>
+                        {errors.halfDayGrossSalaryPayPercentage && <p className="text-xs text-destructive">{errors.halfDayGrossSalaryPayPercentage.message}</p>}
+                      </div>
                     </div>
                   </div>
 

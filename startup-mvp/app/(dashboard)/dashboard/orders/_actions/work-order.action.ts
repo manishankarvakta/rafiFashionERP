@@ -31,6 +31,7 @@ export interface BatchWorkOrderItemInput {
   orderTitle?: string | null;
   styleNo?: string | null;
   targetQuantity?: number | null;
+  unitPrice?: number | null;
   unit?: string | null;
   notes?: string | null;
 }
@@ -118,6 +119,8 @@ export async function createBatchWorkOrders(input: CreateBatchWorkOrdersInput) {
         const targetQty = item.targetQuantity !== undefined && item.targetQuantity !== null && item.targetQuantity !== 0
           ? Number(item.targetQuantity) 
           : 0;
+        const unitPriceNum = item.unitPrice !== undefined && item.unitPrice !== null ? Number(item.unitPrice) : 0;
+        const totalAmount = new Decimal(targetQty).mul(new Decimal(unitPriceNum));
         
         let itemTitle = item.orderTitle || null;
         let itemUnit = item.unit || "Pcs";
@@ -142,8 +145,8 @@ export async function createBatchWorkOrders(input: CreateBatchWorkOrdersInput) {
             styleNo: item.styleNo || null,
             unit: itemUnit,
             targetQuantity: targetQty,
-            unitPrice: new Decimal(0),
-            totalAmount: new Decimal(0),
+            unitPrice: new Decimal(unitPriceNum),
+            totalAmount,
             deliveryDeadline: input.deliveryDeadline ? new Date(input.deliveryDeadline) : null,
             notes: item.notes || input.notes || null,
             createdBy: session.user.id,

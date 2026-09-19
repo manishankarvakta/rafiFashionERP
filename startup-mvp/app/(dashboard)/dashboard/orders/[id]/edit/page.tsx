@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
-  FiArrowLeft, FiSave, FiLayers, FiUser, FiPackage, FiInfo, FiCheckCircle
+  FiArrowLeft, FiSave, FiLayers, FiUser, FiPackage, FiInfo, FiCheckCircle, FiPlus
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { getWorkOrderById, updateWorkOrder, getClientsAndItemsForSelect } from "../../_actions/work-order.action";
+import { QuickCreateReadyProductModal } from "../../_components/quick-create-ready-product-modal";
 
 export default function EditWorkOrderPage() {
   const params = useParams();
@@ -24,12 +25,14 @@ export default function EditWorkOrderPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loadingInit, setLoadingInit] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
     clientId: "",
     itemId: "",
     targetQuantity: 100,
+    unitPrice: 0,
     unit: "Pcs",
     deliveryDeadline: "",
   });
@@ -56,6 +59,7 @@ export default function EditWorkOrderPage() {
           clientId: o.clientId || "",
           itemId: o.itemId || "",
           targetQuantity: Number(o.targetQuantity || 100),
+          unitPrice: Number(o.unitPrice || 0),
           unit: o.unit || "Pcs",
           deliveryDeadline: o.deliveryDeadline ? new Date(o.deliveryDeadline).toISOString().split("T")[0] : "",
         });
@@ -80,9 +84,29 @@ export default function EditWorkOrderPage() {
         if (selectedItem?.unit?.symbol) {
           updated.unit = selectedItem.unit.symbol;
         }
+        if (selectedItem) {
+          const defaultPrice = Number(selectedItem.costPrice || selectedItem.salesPrice || 0);
+          if (defaultPrice > 0 && (!prev.unitPrice || Number(prev.unitPrice) === 0)) {
+            updated.unitPrice = defaultPrice;
+          }
+        }
       }
       return updated;
     });
+  };
+
+  const handleProductCreated = (newItem: any) => {
+    setItems((prev) => {
+      if (prev.some((it) => it.id === newItem.id)) return prev;
+      return [newItem, ...prev];
+    });
+
+    setFormData((prev) => ({
+      ...prev,
+      itemId: newItem.id,
+      unit: newItem.unit?.symbol || prev.unit || "Pcs",
+      unitPrice: Number(newItem.costPrice || newItem.salesPrice || 0) || prev.unitPrice || 0,
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,6 +129,7 @@ export default function EditWorkOrderPage() {
         itemId: formData.itemId || null,
         unit: formData.unit || "Pcs",
         targetQuantity: Number(formData.targetQuantity),
+        unitPrice: Number(formData.unitPrice) || 0,
         deliveryDeadline: formData.deliveryDeadline ? new Date(formData.deliveryDeadline).toISOString() : null,
       });
 
@@ -227,24 +252,47 @@ export default function EditWorkOrderPage() {
               )}
             </div>
 
-            {/* Ready Product Select */}
+            {/* Ready Product Select with Quick Create */}
             <div className="space-y-2">
-              <Label htmlFor="itemId" className="font-semibold text-gray-800 dark:text-gray-200">
-                Ordered Ready Product (Garment)
-              </Label>
-              <select
-                id="itemId"
-                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                value={formData.itemId}
-                onChange={(e) => handleChange("itemId", e.target.value)}
-              >
-                <option value="">-- Select Ready Product / Garment --</option>
-                {selectableProducts.map((it) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name} ({it.code}) {it.category?.name ? `• ${it.category.name}` : ""}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="itemId" className="font-semibold text-gray-800 dark:text-gray-200">
+                  Ordered Ready Product (Garment)
+                </Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsQuickCreateOpen(true)}
+                  className="h-6 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-1"
+                >
+                  <FiPlus className="h-3.5 w-3.5" /> New Product
+                </Button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <select
+                  id="itemId"
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={formData.itemId}
+                  onChange={(e) => handleChange("itemId", e.target.value)}
+                >
+                  <option value="">-- Select Ready Product / Garment --</option>
+                  {selectableProducts.map((it) => (
+                    <option key={it.id} value={it.id}>
+                      {it.name} ({it.code}) {it.category?.name ? `• ${it.category.name}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Quick Create Ready Product"
+                  onClick={() => setIsQuickCreateOpen(true)}
+                  className="h-10 w-10 text-gray-500 hover:text-emerald-700 hover:bg-emerald-50 shrink-0 border border-dashed border-gray-300 rounded-md"
+                >
+                  <FiPlus className="h-4 w-4" />
+                </Button>
+              </div>
               {selectedProduct && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                   <FiPackage className="text-emerald-500" /> Linked Item Code: <strong>{selectedProduct.code}</strong>
@@ -285,6 +333,30 @@ export default function EditWorkOrderPage() {
               </div>
             </div>
 
+            {/* Making Cost / Unit Price */}
+            <div className="space-y-2">
+              <Label htmlFor="unitPrice" className="font-semibold text-gray-800 dark:text-gray-200">
+                Making Cost / Unit Rate (৳)
+              </Label>
+              <div className="space-y-1">
+                <Input
+                  id="unitPrice"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="font-semibold"
+                  value={formData.unitPrice}
+                  onChange={(e) => handleChange("unitPrice", e.target.value)}
+                />
+                {Number(formData.targetQuantity) > 0 && Number(formData.unitPrice) > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Estimated Total Cost: <strong className="text-emerald-600">৳{(Number(formData.targetQuantity) * Number(formData.unitPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* Delivery Deadline */}
             <div className="space-y-2">
               <Label htmlFor="deliveryDeadline" className="font-semibold text-gray-800 dark:text-gray-200">
@@ -317,6 +389,13 @@ export default function EditWorkOrderPage() {
           </Button>
         </div>
       </form>
+
+      {/* Quick Create Ready Product Modal */}
+      <QuickCreateReadyProductModal
+        open={isQuickCreateOpen}
+        onOpenChange={setIsQuickCreateOpen}
+        onSuccess={handleProductCreated}
+      />
     </div>
   );
 }

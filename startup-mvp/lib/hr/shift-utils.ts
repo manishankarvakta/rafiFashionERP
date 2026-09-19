@@ -329,17 +329,45 @@ export function calculateOTHours(
   return 0;
 }
 
+export interface WorkHoursThresholdRules {
+  enableWorkHoursThresholds?: boolean;
+  minHoursForFullDay?: number;
+  minHoursForHalfDay?: number;
+}
+
 /**
- * Determine the Attendance Status based on shift policies
+ * Determine the Attendance Status based on shift policies and work hours thresholds
  */
 export function determineAttendanceStatus(
   checkIn: Date | null,
   attendanceDate: Date,
   shift: ShiftPolicy | null,
-  breakCheckIn?: Date | null
+  breakCheckIn?: Date | null,
+  options?: {
+    checkOut?: Date | null;
+    workHours?: number | null;
+    thresholds?: WorkHoursThresholdRules | null;
+  }
 ): AttendanceStatusType {
   if (!checkIn) {
     return "ABSENT";
+  }
+
+  // If checkOut exists and workHours thresholds are enabled, evaluate logged work hours
+  const thresholds = options?.thresholds;
+  const enableThresholds = thresholds?.enableWorkHoursThresholds ?? (thresholds ? true : false);
+  const workHours = options?.workHours;
+  const hasCheckedOut = !!options?.checkOut;
+
+  if (enableThresholds && hasCheckedOut && typeof workHours === "number" && workHours >= 0) {
+    const minFull = thresholds?.minHoursForFullDay ?? 8;
+    const minHalf = thresholds?.minHoursForHalfDay ?? 4;
+
+    if (workHours < minHalf) {
+      return "ABSENT";
+    } else if (workHours < minFull) {
+      return "HALF_DAY";
+    }
   }
 
   if (!shift) {

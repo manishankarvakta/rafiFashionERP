@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { createBatchWorkOrders, getClientsAndItemsForSelect } from "../_actions/work-order.action";
+import { QuickCreateReadyProductModal } from "../_components/quick-create-ready-product-modal";
 
 interface OrderItemRow {
   id: string;
@@ -19,6 +20,7 @@ interface OrderItemRow {
   orderTitle?: string;
   styleNo?: string;
   quantity: string | number;
+  unitPrice: string | number;
   unit?: string;
   notes?: string;
 }
@@ -30,6 +32,10 @@ export default function CreateWorkOrderPage() {
   const [loadingInit, setLoadingInit] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Quick Create Modal State
+  const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
+  const [targetRowIdForNewProduct, setTargetRowIdForNewProduct] = useState<string | null>(null);
+
   // Form State
   const [clientId, setClientId] = useState("");
   const [deliveryDeadline, setDeliveryDeadline] = useState("");
@@ -40,6 +46,7 @@ export default function CreateWorkOrderPage() {
       id: "row-" + Date.now(),
       itemId: "",
       quantity: "",
+      unitPrice: "",
       unit: "Pcs",
       notes: "",
     }
@@ -72,6 +79,7 @@ export default function CreateWorkOrderPage() {
         id: "row-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
         itemId: "",
         quantity: "",
+        unitPrice: "",
         unit: "Pcs",
         notes: "",
       }
@@ -99,13 +107,77 @@ export default function CreateWorkOrderPage() {
           if (selectedItem?.name && !updated.orderTitle) {
             updated.orderTitle = selectedItem.name;
           }
+          if (selectedItem) {
+            const defaultPrice = Number(selectedItem.costPrice || selectedItem.salesPrice || 0);
+            if (defaultPrice > 0 && (!row.unitPrice || Number(row.unitPrice) === 0)) {
+              updated.unitPrice = defaultPrice;
+            }
+          }
         }
         return updated;
       })
     );
   };
 
+  const handleProductCreated = (newItem: any) => {
+    setItems((prev) => {
+      if (prev.some((it) => it.id === newItem.id)) return prev;
+      return [newItem, ...prev];
+    });
+
+    const rowIdToUpdate = targetRowIdForNewProduct || orderRows[0]?.id;
+    if (rowIdToUpdate) {
+      setOrderRows((prev) =>
+        prev.map((row) => {
+          if (row.id === rowIdToUpdate) {
+            return {
+              ...row,
+              itemId: newItem.id,
+              unit: newItem.unit?.symbol || row.unit || "Pcs",
+              orderTitle: newItem.name,
+              styleNo: newItem.code || row.styleNo || "",
+              unitPrice: Number(newItem.costPrice || newItem.salesPrice || 0) || row.unitPrice || "",
+            };
+          }
+          return row;
+        })
+      );
+    }
+    setTargetRowIdForNewProduct(null);
+  };
+
+  const handleOpenQuickCreate = (targetRowId?: string) => {
+    if (targetRowId) {
+      setTargetRowIdForNewProduct(targetRowId);
+    } else {
+      // Find first empty row or create new row
+      const emptyRow = orderRows.find((r) => !r.itemId);
+      if (emptyRow) {
+        setTargetRowIdForNewProduct(emptyRow.id);
+      } else {
+        const newRowId = "row-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4);
+        setOrderRows((prev) => [
+          ...prev,
+          {
+            id: newRowId,
+            itemId: "",
+            quantity: "",
+            unitPrice: "",
+            unit: "Pcs",
+            notes: "",
+          }
+        ]);
+        setTargetRowIdForNewProduct(newRowId);
+      }
+    }
+    setIsQuickCreateOpen(true);
+  };
+
   const totalTargetQty = orderRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
+  const totalOrderCost = orderRows.reduce(
+    (sum, r) => sum + ((Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)),
+    0
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +187,7 @@ export default function CreateWorkOrderPage() {
       return;
     }
 
-    const validRows = orderRows.filter((r) => r.itemId || r.orderTitle || (Number(r.quantity) > 0));
+    const validRows = orderRows.filter((r) => r.itemId || r.orderTitle || (Number(r.quantity) > 0) || (Number(r.unitPrice) > 0));
     if (validRows.length === 0) {
       toast.error("Please add at least one ready product or garment item.");
       return;
@@ -134,6 +206,7 @@ export default function CreateWorkOrderPage() {
             orderTitle: r.orderTitle || itemObj?.name || null,
             styleNo: r.styleNo || itemObj?.code || null,
             targetQuantity: r.quantity !== "" && r.quantity !== undefined && r.quantity !== null ? Number(r.quantity) : 0,
+            unitPrice: r.unitPrice !== "" && r.unitPrice !== undefined && r.unitPrice !== null ? Number(r.unitPrice) : 0,
             unit: r.unit || itemObj?.unit?.symbol || "Pcs",
             notes: r.notes?.trim() || null,
           };
@@ -302,15 +375,26 @@ export default function CreateWorkOrderPage() {
                 Add one or multiple products ordered by this client.
               </CardDescription>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleAddRow}
-              className="gap-1.5 text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
-            >
-              <FiPlus /> Add Product
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenQuickCreate()}
+                className="gap-1.5 text-xs h-8 border-gray-300 bg-white hover:bg-gray-50 text-gray-800 font-medium shadow-2xs"
+              >
+                <FiPlus className="text-emerald-600 font-bold" /> New Ready Product
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddRow}
+                className="gap-1.5 text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
+              >
+                <FiPlus /> Add Row
+              </Button>
+            </div>
           </CardHeader>
 
           <CardContent className="p-4 sm:p-6 space-y-4">
@@ -320,36 +404,64 @@ export default function CreateWorkOrderPage() {
                   <tr>
                     <th className="p-3 w-10 text-center">#</th>
                     <th className="p-3 min-w-[280px]">Ready Product / Garment *</th>
-                    <th className="p-3 w-40">Quantity (Optional)</th>
-                    <th className="p-3 min-w-[200px]">Item Notes / Remarks</th>
+                    <th className="p-3 w-32">Quantity (Optional)</th>
+                    <th className="p-3 w-36">Cost / Unit (৳)</th>
+                    <th className="p-3 min-w-[180px]">Item Notes / Remarks</th>
                     <th className="p-3 w-10 text-center"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {orderRows.map((row, idx) => {
+                    const rowQty = Number(row.quantity) || 0;
+                    const rowPrice = Number(row.unitPrice) || 0;
+                    const rowSubtotal = rowQty * rowPrice;
+                    const selectedProd = selectableProducts.find((p) => p.id === row.itemId);
+
                     return (
                       <tr key={row.id} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="p-3 text-center text-gray-400 font-mono">{idx + 1}</td>
+                        {/* Row Index */}
+                        <td className="p-3 align-top text-center">
+                          <div className="h-9 flex items-center justify-center text-gray-400 font-mono text-xs">
+                            {idx + 1}
+                          </div>
+                        </td>
                         
-                        {/* Ready Product Dropdown */}
-                        <td className="p-3">
-                          <select
-                            required
-                            className="w-full h-9 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 font-medium"
-                            value={row.itemId}
-                            onChange={(e) => handleRowChange(row.id, "itemId", e.target.value)}
-                          >
-                            <option value="">-- Select Ready Product / Garment --</option>
-                            {selectableProducts.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.name} ({item.code}) {item.category?.name ? `• ${item.category.name}` : ""}
-                              </option>
-                            ))}
-                          </select>
+                        {/* Ready Product Dropdown with Quick Create Trigger */}
+                        <td className="p-3 align-top">
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              required
+                              className="w-full h-9 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 font-medium"
+                              value={row.itemId}
+                              onChange={(e) => handleRowChange(row.id, "itemId", e.target.value)}
+                            >
+                              <option value="">-- Select Ready Product / Garment --</option>
+                              {selectableProducts.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name} ({item.code}) {item.category?.name ? `• ${item.category.name}` : ""}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title="Quick Create Ready Product"
+                              onClick={() => handleOpenQuickCreate(row.id)}
+                              className="h-9 w-9 text-gray-500 hover:text-emerald-700 hover:bg-emerald-50 shrink-0 border border-dashed border-gray-300 rounded-md"
+                            >
+                              <FiPlus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {selectedProd?.category?.name && (
+                            <span className="text-[11px] text-gray-500 font-medium mt-1 block truncate">
+                              Category: {selectedProd.category.name}
+                            </span>
+                          )}
                         </td>
 
                         {/* Quantity (Optional) */}
-                        <td className="p-3">
+                        <td className="p-3 align-top">
                           <Input
                             type="number"
                             min="0"
@@ -359,10 +471,33 @@ export default function CreateWorkOrderPage() {
                             value={row.quantity}
                             onChange={(e) => handleRowChange(row.id, "quantity", e.target.value)}
                           />
+                          {selectedProd?.unit?.symbol && (
+                            <span className="text-[11px] text-gray-500 font-medium mt-1 block">
+                              Unit: {selectedProd.unit.symbol}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Making Cost / Unit Price (৳) */}
+                        <td className="p-3 align-top">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            className="h-9 text-xs font-semibold border-gray-300 focus:ring-gray-900"
+                            value={row.unitPrice}
+                            onChange={(e) => handleRowChange(row.id, "unitPrice", e.target.value)}
+                          />
+                          {rowSubtotal > 0 && (
+                            <span className="text-[11px] text-emerald-700 font-semibold mt-1 block whitespace-nowrap">
+                              Sub: ৳{rowSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
                         </td>
 
                         {/* Row Notes */}
-                        <td className="p-3">
+                        <td className="p-3 align-top">
                           <Input
                             placeholder="e.g. Size M & L, White color..."
                             className="h-9 text-xs text-gray-700 border-gray-300 focus:ring-gray-900"
@@ -372,16 +507,18 @@ export default function CreateWorkOrderPage() {
                         </td>
 
                         {/* Delete Row */}
-                        <td className="p-3 text-center">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveRow(row.id)}
-                            className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                          >
-                            <FiTrash2 className="h-4 w-4" />
-                          </Button>
+                        <td className="p-3 align-top text-center">
+                          <div className="h-9 flex items-center justify-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveRow(row.id)}
+                              className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <FiTrash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -392,19 +529,31 @@ export default function CreateWorkOrderPage() {
 
             {/* Bottom Actions & Summary */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleAddRow}
-                className="gap-1.5 text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
-              >
-                <FiPlus /> Add Another Product
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddRow}
+                  className="gap-1.5 text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
+                >
+                  <FiPlus /> Add Row
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenQuickCreate()}
+                  className="gap-1.5 text-xs h-8 border-gray-300 bg-white hover:bg-gray-50 text-gray-800 font-medium"
+                >
+                  <FiPlus className="text-emerald-600" /> New Ready Product
+                </Button>
+              </div>
 
-              <div className="flex items-center gap-6 text-xs text-gray-700">
+              <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-gray-700">
                 <span>Total Products: <strong className="text-gray-900">{orderRows.length}</strong></span>
                 <span>Total Quantity: <strong className="text-gray-900 text-sm font-bold">{totalTargetQty.toLocaleString()} Pcs</strong></span>
+                <span>Total Making Cost: <strong className="text-emerald-700 text-sm font-bold">৳{totalOrderCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
               </div>
             </div>
           </CardContent>
@@ -427,7 +576,15 @@ export default function CreateWorkOrderPage() {
           </Button>
         </div>
       </form>
+
+      {/* Quick Create Ready Product Modal */}
+      <QuickCreateReadyProductModal
+        open={isQuickCreateOpen}
+        onOpenChange={setIsQuickCreateOpen}
+        onSuccess={handleProductCreated}
+      />
     </div>
   );
 }
+
 
