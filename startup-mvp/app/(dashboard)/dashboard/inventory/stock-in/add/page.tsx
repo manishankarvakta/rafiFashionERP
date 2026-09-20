@@ -78,9 +78,27 @@ export default function CreateStockInPage() {
 
   // Filter master items for Raw Materials
   const rawMaterialItems = items.filter((it) => it.itemType === "RAW_MATERIAL");
-  const selectableRawMaterials = rawMaterialItems.length > 0 ? rawMaterialItems : items;
-
+  
   const selectedWorkOrder = workOrders.find((w) => w.id === workOrderId);
+  const orderAssignedMaterials: any[] = selectedWorkOrder?.rawMaterials?.map((rm: any) => rm.item).filter(Boolean) || [];
+  
+  // If a Work Order with assigned materials is selected, strictly restrict dropdown to those materials!
+  const selectableRawMaterials = (selectedWorkOrder && orderAssignedMaterials.length > 0)
+    ? orderAssignedMaterials
+    : (rawMaterialItems.length > 0 ? rawMaterialItems : items);
+
+  const handleAutoFillAssignedMaterials = () => {
+    if (!selectedWorkOrder || orderAssignedMaterials.length === 0) return;
+    const rows: RawMaterialRow[] = orderAssignedMaterials.map((it: any, index: number) => ({
+      id: "row-" + Date.now() + "-" + index,
+      itemId: it.id,
+      quantity: 1,
+      unit: it.unit?.symbol || "Pcs",
+      notes: "",
+    }));
+    setMaterialRows(rows);
+    toast.success(`Loaded ${rows.length} assigned raw materials for ${selectedWorkOrder.orderNo}`);
+  };
 
   const handleAddRow = () => {
     const defaultUnit = units.length > 0 ? units[0].symbol : "Kg";
@@ -282,7 +300,7 @@ export default function CreateStockInPage() {
 
             {/* Auto-detected Client Info Box */}
             {selectedWorkOrder && (
-              <div className="p-3.5 bg-primary/5 border border-primary/20 rounded-lg text-xs space-y-2">
+              <div className="p-3.5 bg-primary/5 border border-primary/20 rounded-lg text-xs space-y-2.5">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <FiUser className="text-primary h-4 w-4" />
@@ -304,12 +322,45 @@ export default function CreateStockInPage() {
                   </div>
                 </div>
 
+                {/* Assigned Materials for this Order */}
+                {orderAssignedMaterials.length > 0 ? (
+                  <div className="pt-2 border-t border-primary/10 space-y-1.5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 dark:text-emerald-300 font-semibold">
+                        <FiCheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Assigned Materials for this Order ({orderAssignedMaterials.length}):</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAutoFillAssignedMaterials}
+                        className="h-6 text-[11px] gap-1 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 font-medium px-2 py-0"
+                      >
+                        ⚡ Auto-fill Assigned Materials
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {orderAssignedMaterials.map((it: any) => (
+                        <span key={it.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-100/70 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-800">
+                          {it.name} {it.code ? `(${it.code})` : ""} {it.unit?.symbol ? `• ${it.unit.symbol}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pt-2 border-t border-primary/10 text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <FiInfo className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>No specific raw materials were pre-assigned to this order. You can select any raw material from inventory.</span>
+                  </div>
+                )}
+
                 {/* Existing Materials Inward Alert if any */}
                 {selectedWorkOrder.materialsIn && selectedWorkOrder.materialsIn.length > 0 && (
-                  <div className="pt-2 border-t border-primary/10 flex items-start gap-2 text-[11px] text-amber-800 dark:text-amber-300">
-                    <FiInfo className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="pt-2 border-t border-primary/10 flex items-start gap-2 text-[11px] text-muted-foreground">
+                    <FiInfo className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
                     <div>
-                      <strong className="font-semibold">Previously Received Materials: </strong>
+                      <strong className="font-semibold text-foreground">Previously Received: </strong>
                       <span>
                         {selectedWorkOrder.materialsIn.map((m: any) => `${m.item?.name || m.materialName || 'Material'}: ${m.quantity} ${m.unit}`).join(", ")}
                       </span>
@@ -357,9 +408,16 @@ export default function CreateStockInPage() {
               <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                 <FiPackage className="text-primary" />
                 2. Raw Materials List
+                {selectedWorkOrder && orderAssignedMaterials.length > 0 && (
+                  <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Restricted to {orderAssignedMaterials.length} Assigned Materials
+                  </span>
+                )}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Select raw material items from master data and enter inward quantities.
+                {selectedWorkOrder && orderAssignedMaterials.length > 0
+                  ? `Only materials assigned to Order ${selectedWorkOrder.orderNo} are selectable.`
+                  : "Select raw material items from inventory and enter inward quantities."}
               </p>
             </div>
             <Button

@@ -348,6 +348,24 @@ export async function getStockInFormData() {
           productionStatus: true,
           client: { select: { id: true, name: true, phone: true, company: true } },
           item: { select: { name: true } },
+          rawMaterials: {
+            select: {
+              id: true,
+              itemId: true,
+              notes: true,
+              item: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  itemType: true,
+                  costPrice: true,
+                  unit: { select: { symbol: true } },
+                  category: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
           materialsIn: {
             select: {
               id: true,

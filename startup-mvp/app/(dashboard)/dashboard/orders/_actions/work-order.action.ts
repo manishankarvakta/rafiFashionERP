@@ -24,6 +24,7 @@ export interface CreateWorkOrderInput {
   unitPrice?: number | null;
   deliveryDeadline?: string | null;
   notes?: string | null;
+  rawMaterialIds?: string[];
 }
 
 export interface BatchWorkOrderItemInput {
@@ -34,6 +35,7 @@ export interface BatchWorkOrderItemInput {
   unitPrice?: number | null;
   unit?: string | null;
   notes?: string | null;
+  rawMaterialIds?: string[];
 }
 
 export interface CreateBatchWorkOrdersInput {
@@ -41,6 +43,7 @@ export interface CreateBatchWorkOrdersInput {
   deliveryDeadline?: string | null;
   notes?: string | null;
   items: BatchWorkOrderItemInput[];
+  rawMaterialIds?: string[]; // Shared raw materials if provided globally
 }
 
 export async function createWorkOrder(input: CreateWorkOrderInput) {
@@ -78,10 +81,20 @@ export async function createWorkOrder(input: CreateWorkOrderInput) {
         notes: input.notes || null,
         createdBy: session.user.id,
         productionStatus: WorkOrderStatus.PENDING,
+        ...(input.rawMaterialIds && input.rawMaterialIds.length > 0 ? {
+          rawMaterials: {
+            create: input.rawMaterialIds.map((rId) => ({ itemId: rId }))
+          }
+        } : {})
       },
       include: {
         client: { select: { id: true, name: true, phone: true } },
         item: { select: { id: true, name: true, code: true } },
+        rawMaterials: {
+          include: {
+            item: { select: { id: true, name: true, code: true, unit: { select: { symbol: true } } } }
+          }
+        }
       },
     });
 
@@ -136,6 +149,10 @@ export async function createBatchWorkOrders(input: CreateBatchWorkOrdersInput) {
           }
         }
 
+        const effectiveRawIds = (item.rawMaterialIds && item.rawMaterialIds.length > 0)
+          ? item.rawMaterialIds
+          : (input.rawMaterialIds || []);
+
         const wo = await tx.workOrder.create({
           data: {
             orderNo,
@@ -151,10 +168,20 @@ export async function createBatchWorkOrders(input: CreateBatchWorkOrdersInput) {
             notes: item.notes || input.notes || null,
             createdBy: session.user.id,
             productionStatus: WorkOrderStatus.PENDING,
+            ...(effectiveRawIds.length > 0 ? {
+              rawMaterials: {
+                create: effectiveRawIds.map((rId) => ({ itemId: rId }))
+              }
+            } : {})
           },
           include: {
             client: { select: { id: true, name: true, phone: true } },
             item: { select: { id: true, name: true, code: true } },
+            rawMaterials: {
+              include: {
+                item: { select: { id: true, name: true, code: true, unit: { select: { symbol: true } } } }
+              }
+            }
           }
         });
         createdOrders.push(wo);
@@ -255,6 +282,20 @@ export async function getWorkOrderById(id: string) {
             code: true,
             unit: { select: { symbol: true, details: true } },
             category: { select: { name: true } },
+          },
+        },
+        rawMaterials: {
+          include: {
+            item: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                itemType: true,
+                unit: { select: { symbol: true } },
+                category: { select: { name: true } },
+              },
+            },
           },
         },
         createdByUser: { select: { id: true, name: true, email: true } },
@@ -551,6 +592,7 @@ export interface UpdateWorkOrderInput {
   unitPrice?: number;
   deliveryDeadline?: string | null;
   notes?: string | null;
+  rawMaterialIds?: string[];
 }
 
 export async function updateWorkOrder(id: string, input: UpdateWorkOrderInput) {
@@ -564,6 +606,19 @@ export async function updateWorkOrder(id: string, input: UpdateWorkOrderInput) {
     const targetQuantity = input.targetQuantity !== undefined ? input.targetQuantity : existing.targetQuantity;
     const unitPrice = input.unitPrice !== undefined ? new Decimal(input.unitPrice) : existing.unitPrice;
     const totalAmount = new Decimal(targetQuantity).mul(unitPrice);
+
+    if (input.rawMaterialIds !== undefined) {
+      await prisma.workOrderRawMaterial.deleteMany({ where: { workOrderId: id } });
+      if (input.rawMaterialIds.length > 0) {
+        await prisma.workOrderRawMaterial.createMany({
+          data: input.rawMaterialIds.map((rId) => ({
+            workOrderId: id,
+            itemId: rId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
 
     const updated = await prisma.workOrder.update({
       where: { id },
@@ -586,6 +641,11 @@ export async function updateWorkOrder(id: string, input: UpdateWorkOrderInput) {
       include: {
         client: { select: { id: true, name: true, phone: true } },
         item: { select: { id: true, name: true, code: true } },
+        rawMaterials: {
+          include: {
+            item: { select: { id: true, name: true, code: true, unit: { select: { symbol: true } } } },
+          },
+        },
       },
     });
 

@@ -27,6 +27,8 @@ export default function EditWorkOrderPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isQuickCreateOpen, setIsQuickCreateOpen] = useState(false);
 
+  const [assignedRawMaterialIds, setAssignedRawMaterialIds] = useState<string[]>([]);
+
   // Form State
   const [formData, setFormData] = useState({
     clientId: "",
@@ -55,6 +57,8 @@ export default function EditWorkOrderPage() {
       if (orderRes.success && orderRes.order) {
         const o = orderRes.order;
         setOrder(o);
+        const existingRawIds = (o.rawMaterials || []).map((rm: any) => rm.itemId).filter(Boolean);
+        setAssignedRawMaterialIds(existingRawIds);
         setFormData({
           clientId: o.clientId || "",
           itemId: o.itemId || "",
@@ -71,6 +75,21 @@ export default function EditWorkOrderPage() {
     }
     loadData();
   }, [orderId]);
+
+  const handleToggleRawMaterial = (itemId: string) => {
+    setAssignedRawMaterialIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
+    );
+  };
+
+  const handleSelectAllRawMaterials = () => {
+    const rawIds = items.filter((it) => it.itemType === "RAW_MATERIAL").map((it) => it.id);
+    setAssignedRawMaterialIds(rawIds);
+  };
+
+  const handleClearAllRawMaterials = () => {
+    setAssignedRawMaterialIds([]);
+  };
 
   // Filter items to show only Ready Products
   const readyProductItems = items.filter((it) => it.itemType === "READY_PRODUCT");
@@ -131,6 +150,7 @@ export default function EditWorkOrderPage() {
         targetQuantity: Number(formData.targetQuantity),
         unitPrice: Number(formData.unitPrice) || 0,
         deliveryDeadline: formData.deliveryDeadline ? new Date(formData.deliveryDeadline).toISOString() : null,
+        rawMaterialIds: assignedRawMaterialIds,
       });
 
       if (res.success && res.workOrder) {
@@ -369,6 +389,99 @@ export default function EditWorkOrderPage() {
                 onChange={(e) => handleChange("deliveryDeadline", e.target.value)}
               />
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 2: Assigned Raw Materials */}
+        <Card className="bg-white dark:bg-card border shadow-xs">
+          <CardHeader className="pb-3 border-b flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <FiLayers className="text-primary" />
+                2. Assigned Raw Materials (For Stock-In Restriction)
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                Select the raw materials required for this order. Only these materials can be stocked in under this order.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSelectAllRawMaterials}
+                className="text-xs h-7"
+              >
+                Select All
+              </Button>
+              {assignedRawMaterialIds.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearAllRawMaterials}
+                  className="text-xs h-7 text-red-600"
+                >
+                  Clear ({assignedRawMaterialIds.length})
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            {items.filter((it) => it.itemType === "RAW_MATERIAL").length === 0 ? (
+              <div className="p-6 text-center border border-dashed rounded-lg text-muted-foreground text-xs">
+                No Raw Materials found in the system.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto p-1 border rounded-lg bg-gray-50/50 dark:bg-gray-800/30">
+                  {items.filter((it) => it.itemType === "RAW_MATERIAL").map((raw) => {
+                    const isSelected = assignedRawMaterialIds.includes(raw.id);
+                    return (
+                      <div
+                        key={raw.id}
+                        onClick={() => handleToggleRawMaterial(raw.id)}
+                        className={`p-3 rounded-lg border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 select-none ${
+                          isSelected
+                            ? "bg-emerald-50/80 border-emerald-300 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-700 shadow-2xs"
+                            : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300"
+                        }`}
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-semibold truncate flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-emerald-600" : "bg-gray-300 dark:bg-gray-600"}`} />
+                            {raw.name}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                            <span>Code: {raw.code}</span>
+                            {raw.category?.name && <span>• {raw.category.name}</span>}
+                            {raw.unit?.symbol && <span>• ({raw.unit.symbol})</span>}
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 mt-0.5 pointer-events-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+                  <span>
+                    Assigned: <strong className="text-foreground font-bold">{assignedRawMaterialIds.length}</strong> of {items.filter((it) => it.itemType === "RAW_MATERIAL").length} Raw Materials
+                  </span>
+                  {assignedRawMaterialIds.length > 0 && (
+                    <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                      ✓ Stock-in for this order is restricted to these {assignedRawMaterialIds.length} materials.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

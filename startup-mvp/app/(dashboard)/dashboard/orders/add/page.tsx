@@ -173,6 +173,23 @@ export default function CreateWorkOrderPage() {
     setIsQuickCreateOpen(true);
   };
 
+  const [assignedRawMaterialIds, setAssignedRawMaterialIds] = useState<string[]>([]);
+
+  const handleToggleRawMaterial = (itemId: string) => {
+    setAssignedRawMaterialIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
+    );
+  };
+
+  const handleSelectAllRawMaterials = () => {
+    const rawIds = items.filter((it) => it.itemType === "RAW_MATERIAL").map((it) => it.id);
+    setAssignedRawMaterialIds(rawIds);
+  };
+
+  const handleClearAllRawMaterials = () => {
+    setAssignedRawMaterialIds([]);
+  };
+
   const totalTargetQty = orderRows.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0);
   const totalOrderCost = orderRows.reduce(
     (sum, r) => sum + ((Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)),
@@ -199,6 +216,7 @@ export default function CreateWorkOrderPage() {
         clientId,
         deliveryDeadline: deliveryDeadline ? new Date(deliveryDeadline).toISOString() : null,
         notes: generalNotes.trim() || null,
+        rawMaterialIds: assignedRawMaterialIds,
         items: validRows.map((r) => {
           const itemObj = items.find((it) => it.id === r.itemId);
           return {
@@ -209,6 +227,7 @@ export default function CreateWorkOrderPage() {
             unitPrice: r.unitPrice !== "" && r.unitPrice !== undefined && r.unitPrice !== null ? Number(r.unitPrice) : 0,
             unit: r.unit || itemObj?.unit?.symbol || "Pcs",
             notes: r.notes?.trim() || null,
+            rawMaterialIds: assignedRawMaterialIds,
           };
         }),
       });
@@ -556,6 +575,99 @@ export default function CreateWorkOrderPage() {
                 <span>Total Making Cost: <strong className="text-emerald-700 text-sm font-bold">৳{totalOrderCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 3: Assign Raw Materials for this Order */}
+        <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
+          <CardHeader className="bg-white border-b border-gray-100 pb-4 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <FiLayers className="text-gray-700" />
+                3. Assign Raw Materials (For Stock-In Restriction)
+              </CardTitle>
+              <CardDescription className="text-xs text-gray-500 mt-0.5">
+                Select the raw materials required for this order. When recording Stock-In later, only these assigned materials will be selectable under this order.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSelectAllRawMaterials}
+                className="text-xs h-8 border-gray-300 hover:bg-gray-50 font-medium"
+              >
+                Select All
+              </Button>
+              {assignedRawMaterialIds.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearAllRawMaterials}
+                  className="text-xs h-8 border-gray-300 hover:bg-gray-50 text-red-600 font-medium"
+                >
+                  Clear ({assignedRawMaterialIds.length})
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-4 sm:p-6 space-y-4">
+            {items.filter((it) => it.itemType === "RAW_MATERIAL").length === 0 ? (
+              <div className="p-6 text-center border border-dashed border-gray-200 rounded-lg text-gray-400 text-xs">
+                No Raw Materials found in the system. You can create raw materials in Master Items.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-72 overflow-y-auto p-1 border border-gray-100 rounded-lg bg-gray-50/50">
+                  {items.filter((it) => it.itemType === "RAW_MATERIAL").map((raw) => {
+                    const isSelected = assignedRawMaterialIds.includes(raw.id);
+                    return (
+                      <div
+                        key={raw.id}
+                        onClick={() => handleToggleRawMaterial(raw.id)}
+                        className={`p-3 rounded-lg border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 select-none ${
+                          isSelected
+                            ? "bg-emerald-50/80 border-emerald-300 text-emerald-900 shadow-2xs"
+                            : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-semibold truncate flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${isSelected ? "bg-emerald-600" : "bg-gray-300"}`} />
+                            {raw.name}
+                          </div>
+                          <div className="text-[10px] text-gray-500 flex items-center gap-2">
+                            <span>Code: {raw.code}</span>
+                            {raw.category?.name && <span>• {raw.category.name}</span>}
+                            {raw.unit?.symbol && <span>• ({raw.unit.symbol})</span>}
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 mt-0.5 pointer-events-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-gray-600 pt-1">
+                  <span>
+                    Assigned: <strong className="text-gray-900 font-bold">{assignedRawMaterialIds.length}</strong> of {items.filter((it) => it.itemType === "RAW_MATERIAL").length} Raw Materials
+                  </span>
+                  {assignedRawMaterialIds.length > 0 && (
+                    <span className="text-emerald-700 font-medium">
+                      ✓ Stock-in for this order will be strictly restricted to these {assignedRawMaterialIds.length} materials.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -520,6 +520,29 @@ export default function OrderDetailPage() {
             </CardHeader>
 
             <CardContent className="p-6 space-y-6">
+              {/* Assigned Raw Materials Badges */}
+              {order.rawMaterials && order.rawMaterials.length > 0 && (
+                <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-emerald-900 flex items-center gap-1.5">
+                      <FiCheckCircle className="text-emerald-600" /> Assigned Raw Materials for this Order ({order.rawMaterials.length}):
+                    </span>
+                    <Link href="/dashboard/inventory/stock-in/add">
+                      <Button variant="outline" size="sm" className="h-6 text-[11px] gap-1 border-emerald-300 bg-white hover:bg-emerald-100 text-emerald-800 font-medium px-2 py-0">
+                        Stock In Materials
+                      </Button>
+                    </Link>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {order.rawMaterials.map((rm: any) => (
+                      <span key={rm.id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-white text-emerald-800 border border-emerald-200 shadow-2xs">
+                        {rm.item?.name} {rm.item?.code ? `(${rm.item.code})` : ""} {rm.item?.unit?.symbol ? `• ${rm.item.unit.symbol}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Materials Balance Summary Table */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-3">

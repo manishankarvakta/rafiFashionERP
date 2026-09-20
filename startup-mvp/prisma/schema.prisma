@@ -428,6 +428,7 @@ model Item {
   workOrdersAsFinishedGood       WorkOrder[]                     @relation("ItemWorkOrders")
   workOrderMaterialsIn           WorkOrderMaterialIn[]
   workOrderMaterialsOut          WorkOrderMaterialOut[]
+  workOrderRawMaterials          WorkOrderRawMaterial[]          @relation("WorkOrderRawMaterialItem")
 
   @@index([code])
   @@index([name])
@@ -2842,6 +2843,7 @@ model WorkOrder {
   materialsIn      WorkOrderMaterialIn[]
   materialsOut     WorkOrderMaterialOut[]
   deliveries       WorkOrderDelivery[]
+  rawMaterials     WorkOrderRawMaterial[]
   stockOuts        StockOut[]
   saleInvoiceId    String?                @unique
   saleInvoice      Sale?                  @relation("WorkOrderSaleInvoice", fields: [saleInvoiceId], references: [id])
@@ -2924,4 +2926,19 @@ model WorkOrderDelivery {
   workOrder        WorkOrder              @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
   @@index([workOrderId])
+}
+
+model WorkOrderRawMaterial {
+  id          String    @id @default(cuid())
+  workOrderId String
+  itemId      String
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  item        Item      @relation("WorkOrderRawMaterialItem", fields: [itemId], references: [id])
+
+  @@unique([workOrderId, itemId])
+  @@index([workOrderId])
+  @@index([itemId])
 }
