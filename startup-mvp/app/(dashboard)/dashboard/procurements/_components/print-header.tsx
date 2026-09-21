@@ -151,13 +151,13 @@ export default function PrintHeader({
           <div className="border border-slate-800 p-1 bg-white flex items-center justify-center w-16 h-16 shrink-0">
             <img
               src="/main_logo.png"
-              alt="Ferrari Fashion Logo"
+              alt="RAFI FASHION Logo"
               className="max-h-full max-w-full object-contain"
             />
           </div>
           <div>
             <h1 className="text-base font-bold uppercase tracking-tight text-slate-900 leading-tight">
-              {organizationName || "FERRARI FASHION"}
+              {organizationName || "RAFI FASHION"}
             </h1>
             <p className="text-xs italic text-slate-600 mt-0.5">
               {organizationAddress || "Unique, Ashulia, Dhaka"}

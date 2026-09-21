@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidateBothPaths } from "@/lib/route-utils-server";
 import { WorkOrderStatus, MaterialInwardSource, OrderType, SaleStatus } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { createSaleAccountingVoucher } from "@/app/(dashboard)/dashboard/sales/_actions/sale.action";
 
 function serialize<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
@@ -314,6 +315,12 @@ export async function getWorkOrderById(id: string) {
         deliveries: {
           orderBy: { deliveryDate: "desc" },
         },
+        productionEntries: {
+          include: {
+            createdByUser: { select: { id: true, name: true, email: true } },
+          },
+          orderBy: { productionDate: "desc" },
+        },
         stockOuts: {
           include: {
             warehouse: { select: { name: true } },
@@ -341,10 +348,224 @@ export async function getWorkOrderById(id: string) {
       return { success: false, error: "Work order not found" };
     }
 
+    // Auto-sync existing invoices to Accounts if voucher has not been generated yet
+    if (order.saleInvoiceId && (!order.saleInvoice || !order.saleInvoice.voucherId)) {
+      try {
+        const syncRes = await createSaleAccountingVoucher(order.saleInvoiceId);
+        if (syncRes.success) {
+          const updatedSale = await prisma.sale.findUnique({
+            where: { id: order.saleInvoiceId },
+            include: {
+              voucher: {
+                include: {
+                  VoucherLine: true,
+                },
+              },
+            },
+          });
+          if (updatedSale) {
+            order.saleInvoice = updatedSale;
+          }
+        }
+      } catch (syncErr) {
+        console.warn("Auto-sync accounting voucher error:", syncErr);
+      }
+    }
+
     return { success: true, order: serialize(order) };
   } catch (error: any) {
     console.error("getWorkOrderById error:", error);
     return { success: false, error: error.message || "Failed to fetch work order" };
+  }
+}
+
+async function generateNextProductionEntryNo(txOrPrisma: any): Promise<string> {
+  const currentYear = new Date().getFullYear();
+  const prefix = `PROD-${currentYear}-`;
+
+  const existingRecords = await txOrPrisma.workOrderProductionEntry.findMany({
+    where: { entryNo: { startsWith: prefix } },
+    select: { entryNo: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  let maxSeq = 0;
+  for (const rec of existingRecords) {
+    const match = rec.entryNo.match(/^PROD-\d{4}-(\d+)/);
+    if (match && match[1]) {
+      const seq = parseInt(match[1], 10);
+      if (!isNaN(seq) && seq > maxSeq) {
+        maxSeq = seq;
+      }
+    }
+  }
+
+  let nextSeq = maxSeq + 1;
+  let candidate = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+
+  while (await txOrPrisma.workOrderProductionEntry.findUnique({ where: { entryNo: candidate } })) {
+    nextSeq++;
+    candidate = `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  }
+
+  return candidate;
+}
+
+export interface AddProductionEntryInput {
+  workOrderId: string;
+  producedQty: number;
+  rejectedQty?: number;
+  productionDate?: string | null;
+  shiftOrLine?: string | null;
+  notes?: string | null;
+}
+
+export async function addProductionEntry(input: AddProductionEntryInput) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+
+    if (!input.producedQty || Number(input.producedQty) <= 0) {
+      return { success: false, error: "Please enter a valid completed quantity greater than 0." };
+    }
+
+    const order = await prisma.workOrder.findUnique({
+      where: { id: input.workOrderId },
+    });
+    if (!order) return { success: false, error: "Work order not found" };
+
+    const entryNo = await generateNextProductionEntryNo(prisma);
+    const prodDate = input.productionDate ? new Date(input.productionDate) : new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create production entry
+      const entry = await tx.workOrderProductionEntry.create({
+        data: {
+          entryNo,
+          workOrderId: input.workOrderId,
+          producedQty: Number(input.producedQty),
+          rejectedQty: Math.max(0, Number(input.rejectedQty || 0)),
+          productionDate: prodDate,
+          shiftOrLine: input.shiftOrLine?.trim() || null,
+          notes: input.notes?.trim() || null,
+          createdById: session.user.id,
+        },
+        include: {
+          createdByUser: { select: { id: true, name: true } },
+        },
+      });
+
+      // 2. Sum all production entries for this work order
+      const allEntries = await tx.workOrderProductionEntry.findMany({
+        where: { workOrderId: input.workOrderId },
+      });
+
+      const totalProduced = allEntries.reduce((sum, e) => sum + e.producedQty, 0);
+      const totalRejected = allEntries.reduce((sum, e) => sum + e.rejectedQty, 0);
+
+      // 3. Determine status
+      let newStatus = order.productionStatus;
+      if (totalProduced >= order.targetQuantity) {
+        newStatus = WorkOrderStatus.COMPLETED;
+      } else if (order.productionStatus === WorkOrderStatus.PENDING || order.productionStatus === WorkOrderStatus.MATERIAL_RECEIVED) {
+        newStatus = WorkOrderStatus.IN_PRODUCTION;
+      }
+
+      await tx.workOrder.update({
+        where: { id: input.workOrderId },
+        data: {
+          producedQuantity: totalProduced,
+          rejectedQuantity: totalRejected,
+          productionStatus: newStatus,
+        },
+      });
+
+      return entry;
+    });
+
+    revalidateBothPaths(`/dashboard/orders/${input.workOrderId}`);
+    revalidateBothPaths("/dashboard/orders");
+    return { success: true, entry: serialize(result) };
+  } catch (error: any) {
+    console.error("addProductionEntry error:", error);
+    return { success: false, error: error.message || "Failed to log production output" };
+  }
+}
+
+export async function deleteProductionEntry(entryId: string) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return { success: false, error: "Unauthorized" };
+
+    const entry = await prisma.workOrderProductionEntry.findUnique({
+      where: { id: entryId },
+    });
+    if (!entry) return { success: false, error: "Production entry not found" };
+
+    const workOrderId = entry.workOrderId;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.workOrderProductionEntry.delete({ where: { id: entryId } });
+
+      const allEntries = await tx.workOrderProductionEntry.findMany({
+        where: { workOrderId },
+      });
+
+      const totalProduced = allEntries.reduce((sum, e) => sum + e.producedQty, 0);
+      const totalRejected = allEntries.reduce((sum, e) => sum + e.rejectedQty, 0);
+
+      const order = await tx.workOrder.findUnique({ where: { id: workOrderId } });
+      let newStatus = order?.productionStatus || WorkOrderStatus.PENDING;
+
+      if (totalProduced === 0) {
+        newStatus = WorkOrderStatus.MATERIAL_RECEIVED;
+      } else if (totalProduced < (order?.targetQuantity || 0) && newStatus === WorkOrderStatus.COMPLETED) {
+        newStatus = WorkOrderStatus.IN_PRODUCTION;
+      }
+
+      await tx.workOrder.update({
+        where: { id: workOrderId },
+        data: {
+          producedQuantity: totalProduced,
+          rejectedQuantity: totalRejected,
+          productionStatus: newStatus,
+        },
+      });
+    });
+
+    revalidateBothPaths(`/dashboard/orders/${workOrderId}`);
+    revalidateBothPaths("/dashboard/orders");
+    return { success: true };
+  } catch (error: any) {
+    console.error("deleteProductionEntry error:", error);
+    return { success: false, error: error.message || "Failed to delete production entry" };
+  }
+}
+
+export async function closeWorkOrderProduction(workOrderId: string, closingNotes?: string) {
+  try {
+    const session = await auth();
+    if (!session?.user) return { success: false, error: "Unauthorized" };
+
+    const order = await prisma.workOrder.findUnique({ where: { id: workOrderId } });
+    if (!order) return { success: false, error: "Work order not found" };
+
+    const updated = await prisma.workOrder.update({
+      where: { id: workOrderId },
+      data: {
+        productionStatus: WorkOrderStatus.COMPLETED,
+        productionNotes: closingNotes 
+          ? (order.productionNotes ? `${order.productionNotes}\n${closingNotes}` : closingNotes)
+          : order.productionNotes,
+      },
+    });
+
+    revalidateBothPaths(`/dashboard/orders/${workOrderId}`);
+    revalidateBothPaths("/dashboard/orders");
+    return { success: true, order: serialize(updated) };
+  } catch (error: any) {
+    console.error("closeWorkOrderProduction error:", error);
+    return { success: false, error: error.message || "Failed to close production" };
   }
 }
 
@@ -526,15 +747,31 @@ export async function generateWorkOrderInvoice(workOrderId: string, input: Gener
       },
     });
 
-    // Link sale to work order
+    // Link sale to work order & mark status as DELIVERED
     await prisma.workOrder.update({
       where: { id: workOrderId },
-      data: { saleInvoiceId: sale.id },
+      data: { 
+        saleInvoiceId: sale.id,
+        productionStatus: WorkOrderStatus.DELIVERED,
+      },
     });
+
+    // Create & Post Accounting Voucher in General Ledger & Client Ledger
+    try {
+      const voucherRes = await createSaleAccountingVoucher(sale.id);
+      if (!voucherRes.success) {
+        console.warn("Accounting voucher warning for work order invoice:", voucherRes.error);
+      }
+    } catch (accErr) {
+      console.error("Error creating accounting voucher for work order invoice:", accErr);
+    }
 
     revalidateBothPaths(`/dashboard/orders/${workOrderId}`);
     revalidateBothPaths("/dashboard/orders");
     revalidateBothPaths("/dashboard/sales");
+    revalidateBothPaths("/dashboard/accounts");
+    revalidateBothPaths("/dashboard/accounts/vouchers");
+    revalidateBothPaths("/dashboard/accounts/ledger");
 
     return { success: true, sale: serialize(sale) };
   } catch (error: any) {

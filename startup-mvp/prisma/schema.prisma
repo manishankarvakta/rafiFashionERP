@@ -106,6 +106,7 @@ model User {
   createdStockOuts                 StockOut[]              @relation("StockOutCreatedBy")
   createdDailyOutputs              EmployeeDailyOutput[]
   createdWorkOrders                WorkOrder[]             @relation("WorkOrderCreator")
+  createdWorkOrderProdEntries      WorkOrderProductionEntry[] @relation("WorkOrderProdEntryCreator")
 
   @@index([status])
   @@index([designationTemplateId])
@@ -366,7 +367,7 @@ model Item {
   code                    String                    @unique
   slug                    String?                   @unique
   description             String?
-  unitId                  String
+  unitId                  String?
   costPrice               Decimal                   @db.Decimal(12, 2)
   status                  String                    @default("active")
   createdAt               DateTime                  @default(now())
@@ -397,7 +398,7 @@ model Item {
   subCategory             Category?                 @relation("ItemSubCategory", fields: [subCategoryId], references: [id])
   brand                   Brand?                    @relation(fields: [brandId], references: [id])
   creator                 User                      @relation("ItemCreator", fields: [createdBy], references: [id], onDelete: Cascade)
-  unit                    Unit                      @relation(fields: [unitId], references: [id])
+  unit                    Unit?                     @relation(fields: [unitId], references: [id])
   productionOrders        ProductionOrder[]         @relation("ProductionOrderFG")
   purchaseItems           PurchaseItem[]
   saleItems               SaleItem[]
@@ -2844,6 +2845,7 @@ model WorkOrder {
   materialsOut     WorkOrderMaterialOut[]
   deliveries       WorkOrderDelivery[]
   rawMaterials     WorkOrderRawMaterial[]
+  productionEntries WorkOrderProductionEntry[]
   stockOuts        StockOut[]
   saleInvoiceId    String?                @unique
   saleInvoice      Sale?                  @relation("WorkOrderSaleInvoice", fields: [saleInvoiceId], references: [id])
@@ -2942,3 +2944,25 @@ model WorkOrderRawMaterial {
   @@index([workOrderId])
   @@index([itemId])
 }
+
+model WorkOrderProductionEntry {
+  id             String      @id @default(cuid())
+  entryNo        String      @unique
+  workOrderId    String
+  producedQty    Int
+  rejectedQty    Int         @default(0)
+  productionDate DateTime    @default(now())
+  shiftOrLine    String?
+  notes          String?     @db.Text
+  createdById    String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  workOrder      WorkOrder   @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  createdByUser  User        @relation("WorkOrderProdEntryCreator", fields: [createdById], references: [id])
+
+  @@index([workOrderId])
+  @@index([productionDate])
+  @@index([createdById])
+}
+

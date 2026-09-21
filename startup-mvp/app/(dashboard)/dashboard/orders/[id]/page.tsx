@@ -7,7 +7,8 @@ import {
   FiArrowLeft, FiCheckCircle, FiClock, FiTruck, 
   FiAlertCircle, FiTrendingUp, FiUser, FiBox, 
   FiPlus, FiPrinter, FiEdit2, FiPackage, FiTrash2,
-  FiArrowDownLeft, FiArrowUpRight, FiLayers
+  FiArrowDownLeft, FiArrowUpRight, FiLayers, FiFileText,
+  FiDollarSign, FiCalendar, FiCheckSquare, FiInfo
 } from "react-icons/fi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,11 @@ import {
   getWorkOrderById, 
   updateWorkOrderProduction, 
   createWorkOrderDelivery, 
-  deleteWorkOrder
+  deleteWorkOrder,
+  addProductionEntry,
+  deleteProductionEntry,
+  closeWorkOrderProduction,
+  generateWorkOrderInvoice
 } from "../_actions/work-order.action";
 import { toast } from "sonner";
 import { WorkOrderStatus } from "@prisma/client";
@@ -49,12 +54,34 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // In-Order Production Update State
+  // In-Order Direct Production Update State
   const [producedQty, setProducedQty] = useState<number>(0);
   const [rejectedQty, setRejectedQty] = useState<number>(0);
   const [prodStatus, setProdStatus] = useState<WorkOrderStatus>(WorkOrderStatus.PENDING);
   const [prodNotes, setProdNotes] = useState<string>("");
   const [isUpdatingProd, setIsUpdatingProd] = useState(false);
+
+  // Batch / Daily Production Entry Modal State
+  const [isBatchOpen, setIsBatchOpen] = useState(false);
+  const [batchData, setBatchData] = useState({
+    producedQty: 0,
+    rejectedQty: 0,
+    productionDate: new Date().toISOString().split("T")[0],
+    shiftOrLine: "",
+    notes: "",
+  });
+  const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
+
+  // Short-Close / Complete Order Modal State
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
+  const [closingNotes, setClosingNotes] = useState("");
+  const [isClosingOrder, setIsClosingOrder] = useState(false);
+
+  // Sales Invoice Modal State
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [invoiceNotes, setInvoiceNotes] = useState("");
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
 
   // Delivery Modal State
   const [isDeliveryOpen, setIsDeliveryOpen] = useState(false);
@@ -69,6 +96,95 @@ export default function OrderDetailPage() {
   // Delete Order State
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeletingOrder, setIsDeletingOrder] = useState(false);
+
+  // Direct In-Page Print State & Handler
+  const [isPrintingInvoice, setIsPrintingInvoice] = useState(false);
+
+  const handleDirectPrintInvoice = (saleId: string) => {
+    setIsPrintingInvoice(true);
+    const oldIframe = document.getElementById("print-invoice-iframe");
+    if (oldIframe) {
+      oldIframe.remove();
+    }
+
+    // Register callback for child iframe (supported by PrintButton.tsx)
+    (window as any).triggerIframePrint = () => {
+      const iframeElement = document.getElementById("print-invoice-iframe") as HTMLIFrameElement;
+      if (iframeElement && iframeElement.contentWindow) {
+        iframeElement.contentWindow.focus();
+        iframeElement.contentWindow.print();
+      }
+      setIsPrintingInvoice(false);
+    };
+
+    const iframe = document.createElement("iframe");
+    iframe.id = "print-invoice-iframe";
+    iframe.style.position = "fixed";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.style.width = "800px";
+    iframe.style.height = "600px";
+    iframe.style.border = "0";
+    iframe.src = `/print/invoice/${saleId}`;
+
+    document.body.appendChild(iframe);
+
+    // Fallback print trigger in case child script callback is delayed
+    iframe.onload = () => {
+      setTimeout(() => {
+        const iframeElement = document.getElementById("print-invoice-iframe") as HTMLIFrameElement;
+        if (iframeElement && iframeElement.contentWindow && (window as any).triggerIframePrint) {
+          iframeElement.contentWindow.focus();
+          iframeElement.contentWindow.print();
+          delete (window as any).triggerIframePrint;
+          setIsPrintingInvoice(false);
+        }
+      }, 2000);
+    };
+  };
+
+  const [printingChallanId, setPrintingChallanId] = useState<string | null>(null);
+
+  const handleDirectPrintChallan = (challanId: string) => {
+    setPrintingChallanId(challanId);
+    const oldIframe = document.getElementById("print-challan-iframe");
+    if (oldIframe) {
+      oldIframe.remove();
+    }
+
+    (window as any).triggerIframePrint = () => {
+      const iframeElement = document.getElementById("print-challan-iframe") as HTMLIFrameElement;
+      if (iframeElement && iframeElement.contentWindow) {
+        iframeElement.contentWindow.focus();
+        iframeElement.contentWindow.print();
+      }
+      setPrintingChallanId(null);
+    };
+
+    const iframe = document.createElement("iframe");
+    iframe.id = "print-challan-iframe";
+    iframe.style.position = "fixed";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.style.width = "800px";
+    iframe.style.height = "600px";
+    iframe.style.border = "0";
+    iframe.src = `/print/delivery-challan/${challanId}`;
+
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      setTimeout(() => {
+        const iframeElement = document.getElementById("print-challan-iframe") as HTMLIFrameElement;
+        if (iframeElement && iframeElement.contentWindow && (window as any).triggerIframePrint) {
+          iframeElement.contentWindow.focus();
+          iframeElement.contentWindow.print();
+          delete (window as any).triggerIframePrint;
+          setPrintingChallanId(null);
+        }
+      }, 2000);
+    };
+  };
 
   const fetchOrder = async () => {
     setLoading(true);
@@ -89,7 +205,7 @@ export default function OrderDetailPage() {
     if (orderId) fetchOrder();
   }, [orderId]);
 
-  // Direct in-order production update handler
+  // Direct quick production update handler
   const handleSaveProduction = async () => {
     setIsUpdatingProd(true);
     const res = await updateWorkOrderProduction(orderId, {
@@ -106,6 +222,85 @@ export default function OrderDetailPage() {
       toast.error(res.error || "Failed to update production");
     }
     setIsUpdatingProd(false);
+  };
+
+  // Batch production entry submission
+  const handleLogBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!batchData.producedQty || Number(batchData.producedQty) <= 0) {
+      toast.error("Please enter a valid completed quantity greater than 0.");
+      return;
+    }
+
+    setIsSubmittingBatch(true);
+    const res = await addProductionEntry({
+      workOrderId: orderId,
+      producedQty: Number(batchData.producedQty),
+      rejectedQty: Number(batchData.rejectedQty || 0),
+      productionDate: batchData.productionDate || null,
+      shiftOrLine: batchData.shiftOrLine || null,
+      notes: batchData.notes || null,
+    });
+
+    if (res.success) {
+      toast.success(`Batch output ${res.entry?.entryNo || ""} logged successfully!`);
+      setIsBatchOpen(false);
+      setBatchData({
+        producedQty: 0,
+        rejectedQty: 0,
+        productionDate: new Date().toISOString().split("T")[0],
+        shiftOrLine: "",
+        notes: "",
+      });
+      fetchOrder();
+    } else {
+      toast.error(res.error || "Failed to log batch output");
+    }
+    setIsSubmittingBatch(false);
+  };
+
+  // Delete production batch entry
+  const handleDeleteBatch = async (entryId: string) => {
+    if (!confirm("Are you sure you want to remove this production batch entry?")) return;
+    setDeletingBatchId(entryId);
+    const res = await deleteProductionEntry(entryId);
+    if (res.success) {
+      toast.success("Batch entry removed and totals recalculated.");
+      fetchOrder();
+    } else {
+      toast.error(res.error || "Failed to remove batch entry");
+    }
+    setDeletingBatchId(null);
+  };
+
+  // Short-close / mark complete
+  const handleCloseOrder = async () => {
+    setIsClosingOrder(true);
+    const res = await closeWorkOrderProduction(orderId, closingNotes);
+    if (res.success) {
+      toast.success("Work order production completed & closed.");
+      setIsCloseModalOpen(false);
+      setClosingNotes("");
+      fetchOrder();
+    } else {
+      toast.error(res.error || "Failed to close order production");
+    }
+    setIsClosingOrder(false);
+  };
+
+  // Generate sales invoice
+  const handleGenerateInvoice = async () => {
+    setIsGeneratingInvoice(true);
+    const res = await generateWorkOrderInvoice(orderId, { notes: invoiceNotes });
+    if (res.success) {
+      toast.success(`Invoice ${res.sale?.saleNumber || ""} generated for actual output!`);
+      setIsInvoiceModalOpen(false);
+      setInvoiceNotes("");
+      fetchOrder();
+    } else {
+      toast.error(res.error || "Failed to generate invoice");
+    }
+    setIsGeneratingInvoice(false);
   };
 
   // Delivery handler
@@ -172,9 +367,15 @@ export default function OrderDetailPage() {
   }
 
   const targetQty = Number(order.targetQuantity || 1);
-  const progressPercent = Math.min(100, Math.round((producedQty / targetQty) * 100));
-  const remainingQty = Math.max(0, targetQty - producedQty);
+  const currentProduced = Number(order.producedQuantity || producedQty || 0);
+  const progressPercent = Math.min(100, Math.round((currentProduced / targetQty) * 100));
+  const remainingQty = Math.max(0, targetQty - currentProduced);
   const totalDelivered = (order.deliveries || []).reduce((sum: number, d: any) => sum + Number(d.deliveredQty || 0), 0);
+  const unitPrice = Number(order.unitPrice || 0);
+  
+  // Actual billing quantity is delivered qty (if delivered) or produced qty or target qty
+  const billingQty = totalDelivered > 0 ? totalDelivered : (currentProduced > 0 ? currentProduced : targetQty);
+  const totalBillableAmount = billingQty * unitPrice;
 
   // Calculate Material Balance (Stock In vs Stock Out)
   const materialSummaryMap = new Map<string, MaterialBalanceItem>();
@@ -232,15 +433,15 @@ export default function OrderDetailPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "COMPLETED":
-        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50">Completed</Badge>;
+        return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 font-medium">Completed</Badge>;
       case "IN_PRODUCTION":
-        return <Badge className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50">In Production</Badge>;
+        return <Badge className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50 font-medium">In Production</Badge>;
       case "MATERIAL_RECEIVED":
-        return <Badge className="bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-50">Material Received</Badge>;
+        return <Badge className="bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-50 font-medium">Material Received</Badge>;
       case "DELIVERED":
-        return <Badge className="bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-100">Delivered</Badge>;
+        return <Badge className="bg-slate-900 text-white border-slate-900 hover:bg-slate-900 font-medium">Delivered & Closed</Badge>;
       default:
-        return <Badge className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50">Pending</Badge>;
+        return <Badge className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50 font-medium">Pending</Badge>;
     }
   };
 
@@ -263,7 +464,7 @@ export default function OrderDetailPage() {
             onClick={() => {
               setDeliveryData((prev) => ({
                 ...prev,
-                deliveredQty: Math.max(0, producedQty - totalDelivered),
+                deliveredQty: Math.max(0, currentProduced - totalDelivered),
               }));
               setIsDeliveryOpen(true);
             }} 
@@ -273,6 +474,26 @@ export default function OrderDetailPage() {
           >
             <FiTruck className="h-4 w-4 text-gray-500" /> Create Delivery Challan
           </Button>
+
+          {order.saleInvoice ? (
+            <Button 
+              onClick={() => handleDirectPrintInvoice(order.saleInvoice.id)}
+              disabled={isPrintingInvoice}
+              size="sm" 
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+            >
+              <FiPrinter className="h-4 w-4" /> 
+              {isPrintingInvoice ? "Preparing Print..." : "Print Sales Invoice"}
+            </Button>
+          ) : (
+            <Button 
+              onClick={() => setIsInvoiceModalOpen(true)}
+              size="sm" 
+              className="gap-1.5 bg-gray-900 hover:bg-black text-white font-medium shadow-sm"
+            >
+              <FiFileText className="h-4 w-4" /> Generate Final Invoice
+            </Button>
+          )}
 
           <Button 
             onClick={() => setIsDeleteOpen(true)}
@@ -285,7 +506,7 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* 1. ORDER & CLIENT OVERVIEW BANNER (Clean White) */}
+      {/* 1. ORDER & CLIENT OVERVIEW BANNER */}
       <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
         <CardContent className="p-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 pb-6 border-b border-gray-100">
@@ -297,6 +518,11 @@ export default function OrderDetailPage() {
                 {order.styleNo && (
                   <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200 text-xs">
                     Style: {order.styleNo}
+                  </Badge>
+                )}
+                {order.saleInvoice && (
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-xs font-semibold">
+                    Invoiced: {order.saleInvoice.saleNumber}
                   </Badge>
                 )}
               </div>
@@ -312,12 +538,16 @@ export default function OrderDetailPage() {
                 <span className="text-xl font-bold text-gray-900">{targetQty} {order.unit || "Pcs"}</span>
               </div>
               <div className="pl-6">
-                <span className="text-xs text-gray-500 font-medium block">Produced</span>
-                <span className="text-xl font-bold text-emerald-600">{producedQty} {order.unit || "Pcs"}</span>
+                <span className="text-xs text-gray-500 font-medium block">Total Produced</span>
+                <span className="text-xl font-bold text-emerald-600">{currentProduced} {order.unit || "Pcs"}</span>
               </div>
               <div className="pl-6">
-                <span className="text-xs text-gray-500 font-medium block">Remaining</span>
-                <span className="text-xl font-bold text-amber-600">{remainingQty} {order.unit || "Pcs"}</span>
+                <span className="text-xs text-gray-500 font-medium block">Delivered</span>
+                <span className="text-xl font-bold text-blue-600">{totalDelivered} {order.unit || "Pcs"}</span>
+              </div>
+              <div className="pl-6">
+                <span className="text-xs text-gray-500 font-medium block">Rate / Pc</span>
+                <span className="text-xl font-bold text-gray-900">৳{unitPrice}</span>
               </div>
             </div>
           </div>
@@ -357,137 +587,228 @@ export default function OrderDetailPage() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* LEFT 2 COLUMNS: PRODUCTION UPDATE & RAW MATERIALS STOCK */}
+        {/* LEFT 2 COLUMNS: PRODUCTION BATCH MANAGER & RAW MATERIALS STOCK */}
         <div className="lg:col-span-2 space-y-6">
           
-          {/* 2. DIRECT IN-ORDER PRODUCTION MANAGER */}
+          {/* 2. PRODUCTION BATCH MANAGER & TIMELINE */}
           <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
             <CardHeader className="bg-white border-b border-gray-100 pb-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <CardTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
-                    <FiTrendingUp className="text-gray-700" /> Production Output & Progress
+                    <FiTrendingUp className="text-gray-700" /> Production Output & Batch Progress
                   </CardTitle>
                   <CardDescription className="text-xs text-gray-500 mt-0.5">
-                    Update completed pieces and defects produced from this order's raw materials.
+                    Log daily batches completed from cutting & sewing. Keep track of individual production runs.
                   </CardDescription>
                 </div>
-                <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200 text-xs">
-                  {progressPercent}% Complete
-                </Badge>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    onClick={() => setIsBatchOpen(true)}
+                    size="sm"
+                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs h-8 shadow-sm"
+                  >
+                    <FiPlus className="w-3.5 h-3.5" /> Log Batch Output
+                  </Button>
+                  
+                  {order.productionStatus !== "COMPLETED" && order.productionStatus !== "DELIVERED" && (
+                    <Button
+                      onClick={() => setIsCloseModalOpen(true)}
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 border-amber-300 text-amber-900 hover:bg-amber-50 font-medium text-xs h-8 shadow-sm"
+                    >
+                      <FiCheckSquare className="w-3.5 h-3.5 text-amber-600" /> Complete / Close
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {/* Progress Bar */}
-              <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden mt-3">
-                <div
-                  className={`h-2.5 rounded-full transition-all duration-300 ${
-                    progressPercent >= 100 ? "bg-emerald-500" : "bg-gray-900"
-                  }`}
-                  style={{ width: `${progressPercent}%` }}
-                ></div>
+              {/* Progress Bar & Summary Pill */}
+              <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-gray-700">
+                    Production Progress: <strong className="text-gray-900">{currentProduced}</strong> of {targetQty} {order.unit || "Pcs"}
+                  </span>
+                  <span className="font-bold text-gray-900">
+                    {progressPercent}% Complete
+                  </span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-2.5 rounded-full transition-all duration-300 ${
+                      progressPercent >= 100 || order.productionStatus === "COMPLETED" || order.productionStatus === "DELIVERED" 
+                        ? "bg-emerald-500" 
+                        : "bg-gray-900"
+                    }`}
+                    style={{ width: `${Math.min(100, progressPercent)}%` }}
+                  ></div>
+                </div>
+
+                {/* Sub stats */}
+                <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
+                  <span>Target: <strong>{targetQty}</strong></span>
+                  <span>Remaining: <strong className={remainingQty > 0 ? "text-amber-600" : "text-emerald-600"}>{remainingQty} {order.unit || "Pcs"}</strong></span>
+                  <span>Total Defects / Rejected: <strong className="text-red-600">{order.rejectedQuantity || 0}</strong></span>
+                </div>
               </div>
             </CardHeader>
 
-            <CardContent className="p-6 space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Produced Quantity */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Completed Qty (Pcs) *
-                  </Label>
-                  <div className="flex items-center gap-1.5">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      className="px-2.5 h-10 border-gray-300 hover:bg-gray-100"
-                      onClick={() => setProducedQty(Math.max(0, Number(producedQty) - 10))}
-                    >
-                      -10
-                    </Button>
-                    <Input
-                      type="number"
-                      min="0"
-                      className="text-center font-bold text-base h-10 border-gray-300 focus:border-gray-900 focus:ring-gray-900"
-                      value={producedQty}
-                      onChange={(e) => setProducedQty(Number(e.target.value))}
-                    />
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      className="px-2.5 h-10 border-gray-300 hover:bg-gray-100"
-                      onClick={() => setProducedQty(Number(producedQty) + 10)}
-                    >
-                      +10
-                    </Button>
+            <CardContent className="p-6 space-y-6">
+              {/* Batch History Timeline Cards */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                    <FiClock className="text-gray-500" /> Production Batch History Cards ({order.productionEntries?.length || 0})
+                  </h4>
+                  <span className="text-[11px] text-gray-400">
+                    Individual recorded output entries
+                  </span>
+                </div>
+
+                {(!order.productionEntries || order.productionEntries.length === 0) ? (
+                  <div className="p-8 text-center bg-gray-50/60 rounded-xl border border-dashed border-gray-200 space-y-2">
+                    <FiBox className="w-8 h-8 text-gray-400 mx-auto" />
+                    <p className="text-xs font-semibold text-gray-700">No daily production batches logged yet</p>
+                    <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
+                      Click <strong>"Log Batch Output"</strong> above each time a quantity (e.g. 20 pcs, 50 pcs) is finished on the production line.
+                    </p>
                   </div>
-                  <span className="text-[11px] text-gray-500 block text-center">
-                    Target: {order.targetQuantity} pcs
-                  </span>
-                </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {order.productionEntries.map((entry: any) => (
+                      <div 
+                        key={entry.id} 
+                        className="p-4 bg-white border border-gray-200 rounded-xl hover:border-gray-300 transition-all shadow-2xs space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <Badge variant="outline" className="bg-gray-50 text-gray-800 border-gray-200 font-mono text-[11px]">
+                            {entry.entryNo}
+                          </Badge>
+                          <span className="text-[11px] text-gray-500 flex items-center gap-1">
+                            <FiCalendar className="w-3 h-3 text-gray-400" />
+                            {new Date(entry.productionDate).toLocaleDateString()}
+                          </span>
+                        </div>
 
-                {/* Rejected Quantity */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Defects / Rejection (Pcs)
-                  </Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    className="h-10 text-center font-bold text-base text-red-600 border-gray-300 focus:border-red-500"
-                    value={rejectedQty}
-                    onChange={(e) => setRejectedQty(Number(e.target.value))}
-                  />
-                  <span className="text-[11px] text-gray-500 block text-center">
-                    Damaged items
-                  </span>
-                </div>
+                        <div className="flex items-baseline justify-between pt-1 border-t border-gray-100">
+                          <div>
+                            <span className="text-[11px] text-gray-400 block font-medium">Batch Output</span>
+                            <span className="text-lg font-bold text-emerald-600">
+                              +{entry.producedQty} <span className="text-xs font-normal text-gray-600">{order.unit || "Pcs"}</span>
+                            </span>
+                          </div>
 
-                {/* Production Status */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Production Status *
-                  </Label>
-                  <select
-                    className="w-full h-10 px-3 rounded-md border border-gray-300 text-sm bg-white text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900"
-                    value={prodStatus}
-                    onChange={(e) => setProdStatus(e.target.value as WorkOrderStatus)}
-                  >
-                    <option value="PENDING">Pending</option>
-                    <option value="MATERIAL_RECEIVED">Material Received</option>
-                    <option value="IN_PRODUCTION">In Production</option>
-                    <option value="COMPLETED">Completed</option>
-                    <option value="DELIVERED">Delivered</option>
-                  </select>
-                  <span className="text-[11px] text-gray-500 block text-center">
-                    Workflow stage
-                  </span>
-                </div>
+                          {entry.rejectedQty > 0 && (
+                            <div className="text-right">
+                              <span className="text-[11px] text-gray-400 block font-medium">Defects</span>
+                              <span className="text-xs font-semibold text-red-600">
+                                {entry.rejectedQty} pcs
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {entry.shiftOrLine && (
+                          <div className="text-[11px] text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-100">
+                            <strong>Line/Shift:</strong> {entry.shiftOrLine}
+                          </div>
+                        )}
+
+                        {entry.notes && (
+                          <p className="text-[11px] text-gray-500 italic truncate" title={entry.notes}>
+                            "{entry.notes}"
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-[11px] text-gray-400">
+                          <span>By: {entry.createdByUser?.name || "Production Line"}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBatch(entry.id)}
+                            disabled={deletingBatchId === entry.id}
+                            className="text-red-500 hover:text-red-700 transition-colors flex items-center gap-1 font-medium hover:underline"
+                          >
+                            <FiTrash2 className="w-3 h-3" />
+                            {deletingBatchId === entry.id ? "Deleting..." : "Remove"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                  Production Notes / Remarks
-                </Label>
-                <textarea
-                  className="w-full p-2.5 rounded-md border border-gray-300 text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  rows={2}
-                  placeholder="e.g. 150 pcs completed, final finishing underway..."
-                  value={prodNotes}
-                  onChange={(e) => setProdNotes(e.target.value)}
-                />
-              </div>
+              {/* Direct Quick Adjustment Collapsible Form */}
+              <div className="border-t border-gray-100 pt-4">
+                <details className="group">
+                  <summary className="cursor-pointer text-xs font-semibold text-gray-600 hover:text-gray-900 flex items-center justify-between list-none">
+                    <span>⚙️ Direct Quick Adjustment (Manual Total Override)</span>
+                    <span className="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                  </summary>
+                  
+                  <div className="pt-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-gray-700">Total Completed Qty *</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          className="h-9 font-bold text-sm"
+                          value={producedQty}
+                          onChange={(e) => setProducedQty(Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-gray-700">Total Defect Qty</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          className="h-9 font-bold text-sm text-red-600"
+                          value={rejectedQty}
+                          onChange={(e) => setRejectedQty(Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-gray-700">Order Status</Label>
+                        <select
+                          className="w-full h-9 px-3 rounded-md border border-gray-300 text-xs bg-white text-gray-900 font-medium"
+                          value={prodStatus}
+                          onChange={(e) => setProdStatus(e.target.value as WorkOrderStatus)}
+                        >
+                          <option value="PENDING">Pending</option>
+                          <option value="MATERIAL_RECEIVED">Material Received</option>
+                          <option value="IN_PRODUCTION">In Production</option>
+                          <option value="COMPLETED">Completed</option>
+                          <option value="DELIVERED">Delivered</option>
+                        </select>
+                      </div>
+                    </div>
 
-              <div className="flex justify-end pt-1">
-                <Button 
-                  onClick={handleSaveProduction} 
-                  disabled={isUpdatingProd} 
-                  className="gap-2 px-6 bg-gray-900 hover:bg-black text-white font-medium shadow-sm"
-                >
-                  <FiCheckCircle className="w-4 h-4" />
-                  {isUpdatingProd ? "Saving..." : "Save Production Output"}
-                </Button>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-gray-700">Overall Production Notes</Label>
+                      <textarea
+                        className="w-full p-2 rounded-md border border-gray-300 text-xs bg-white text-gray-900"
+                        rows={2}
+                        value={prodNotes}
+                        onChange={(e) => setProdNotes(e.target.value)}
+                        placeholder="Overall notes..."
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button 
+                        size="sm" 
+                        onClick={handleSaveProduction} 
+                        disabled={isUpdatingProd} 
+                        className="gap-1.5 bg-gray-900 hover:bg-black text-white text-xs"
+                      >
+                        <FiCheckCircle className="w-3.5 h-3.5" />
+                        {isUpdatingProd ? "Saving..." : "Save Manual Adjustment"}
+                      </Button>
+                    </div>
+                  </div>
+                </details>
               </div>
             </CardContent>
           </Card>
@@ -651,8 +972,109 @@ export default function OrderDetailPage() {
 
         </div>
 
-        {/* RIGHT 1 COLUMN: DELIVERY CHALLANS */}
+        {/* RIGHT 1 COLUMN: DELIVERY CHALLANS & INVOICE / BILLING SETTLEMENT */}
         <div className="space-y-6">
+
+          {/* 4. FINAL INVOICE & ACCOUNTS BILLING CARD */}
+          <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
+            <CardHeader className="bg-white border-b border-gray-100 pb-4">
+              <CardTitle className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <FiDollarSign className="text-gray-700" /> Billing & Sales Invoice
+              </CardTitle>
+              <CardDescription className="text-xs text-gray-500 mt-0.5">
+                Client ledger settlement & official invoice generation.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-4">
+              {order.saleInvoice ? (
+                <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-900 uppercase tracking-wider">
+                      Invoice Generated
+                    </span>
+                    <Badge className="bg-emerald-600 text-white font-mono text-xs">
+                      {order.saleInvoice.saleNumber}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Grand Total:</span>
+                      <strong className="text-emerald-950 text-sm">৳{Number(order.saleInvoice.grandTotal || 0).toLocaleString()}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Invoice Status:</span>
+                      <span className="font-semibold text-emerald-800">{order.saleInvoice.status}</span>
+                    </div>
+                    {order.saleInvoice.voucher && (
+                      <div className="flex justify-between items-center pt-1 border-t border-emerald-200/60">
+                        <span className="text-gray-600">Accounts Voucher:</span>
+                        <Badge variant="outline" className="bg-white text-emerald-800 border-emerald-300 font-mono text-[10px]">
+                          {order.saleInvoice.voucher.voucherNumber || "Posted"}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 flex flex-col gap-2">
+                    <Button 
+                      onClick={() => handleDirectPrintInvoice(order.saleInvoice.id)}
+                      disabled={isPrintingInvoice}
+                      size="sm" 
+                      className="w-full gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium shadow-sm"
+                    >
+                      <FiPrinter className="w-3.5 h-3.5" /> 
+                      {isPrintingInvoice ? "Opening Print..." : "Print Invoice"}
+                    </Button>
+                    <Link href="/dashboard/accounts/vouchers" className="text-center text-[11px] text-emerald-800 hover:text-emerald-950 hover:underline font-medium">
+                      View in Accounts Ledger →
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2 text-xs">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Target Quantity:</span>
+                      <strong className="text-gray-900">{targetQty} pcs</strong>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Actual Output (Delivered/Produced):</span>
+                      <strong className="text-emerald-700">{billingQty} pcs</strong>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Unit Rate:</span>
+                      <strong className="text-gray-900">৳{unitPrice} / pc</strong>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-gray-200 text-sm">
+                      <span className="font-bold text-gray-900">Billable Amount:</span>
+                      <strong className="text-emerald-700 font-bold">৳{totalBillableAmount.toLocaleString()}</strong>
+                    </div>
+                  </div>
+
+                  {currentProduced < targetQty && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-start gap-1.5">
+                      <FiInfo className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                      <span>
+                        Target was {targetQty} pcs, but {currentProduced} pcs produced. Final invoice will be calculated exactly on <strong>{billingQty} pcs</strong>.
+                      </span>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={() => setIsInvoiceModalOpen(true)}
+                    className="w-full gap-2 bg-gray-900 hover:bg-black text-white text-xs font-medium h-9 shadow-sm"
+                  >
+                    <FiFileText className="w-4 h-4" />
+                    Generate Final Invoice & Settle
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 5. DELIVERY CHALLANS */}
           <Card className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
             <CardHeader className="bg-white border-b border-gray-100 pb-4">
               <div className="flex items-center justify-between">
@@ -671,7 +1093,7 @@ export default function OrderDetailPage() {
                   onClick={() => {
                     setDeliveryData((prev) => ({
                       ...prev,
-                      deliveredQty: Math.max(0, producedQty - totalDelivered),
+                      deliveredQty: Math.max(0, currentProduced - totalDelivered),
                     }));
                     setIsDeliveryOpen(true);
                   }}
@@ -705,11 +1127,16 @@ export default function OrderDetailPage() {
                         {del.vehicleNo && <div className="text-[11px] text-gray-400">Vehicle: {del.vehicleNo}</div>}
                       </div>
 
-                      <Link href={`/print/delivery-challan/${del.id}`} target="_blank">
-                        <Button variant="ghost" size="sm" className="h-8 px-2.5 text-xs gap-1 text-gray-700 hover:text-black hover:bg-gray-100">
-                          <FiPrinter className="w-3.5 h-3.5" /> Print
-                        </Button>
-                      </Link>
+                      <Button 
+                        onClick={() => handleDirectPrintChallan(del.id)}
+                        disabled={printingChallanId === del.id}
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 px-2.5 text-xs gap-1 text-gray-700 hover:text-black hover:bg-gray-100"
+                      >
+                        <FiPrinter className="w-3.5 h-3.5" /> 
+                        {printingChallanId === del.id ? "Printing..." : "Print"}
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -719,7 +1146,211 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* CREATE DELIVERY CHALLAN MODAL */}
+      {/* MODAL 1: LOG DAILY / BATCH PRODUCTION OUTPUT */}
+      <Dialog open={isBatchOpen} onOpenChange={setIsBatchOpen}>
+        <DialogContent className="max-w-md bg-white border border-gray-200">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <FiTrendingUp className="text-emerald-600" /> Log Production Batch Output
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Record completed pieces and rejected units from today's production run.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleLogBatch} className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-700">Completed Qty (Pcs) *</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="e.g. 20"
+                  className="border-gray-300 font-bold text-sm focus:ring-gray-900"
+                  value={batchData.producedQty || ""}
+                  onChange={(e) => setBatchData({ ...batchData, producedQty: Number(e.target.value) })}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-700">Defects / Rejected (Pcs)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  className="border-gray-300 text-red-600 font-bold text-sm focus:border-red-500"
+                  value={batchData.rejectedQty || ""}
+                  onChange={(e) => setBatchData({ ...batchData, rejectedQty: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-700">Production Date</Label>
+                <Input
+                  type="date"
+                  value={batchData.productionDate}
+                  onChange={(e) => setBatchData({ ...batchData, productionDate: e.target.value })}
+                  className="border-gray-300 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-700">Shift / Line (Optional)</Label>
+                <Input
+                  placeholder="e.g. Line 1 / Shift A"
+                  value={batchData.shiftOrLine}
+                  onChange={(e) => setBatchData({ ...batchData, shiftOrLine: e.target.value })}
+                  className="border-gray-300 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-700">Notes / Remarks</Label>
+              <textarea
+                className="w-full p-2.5 rounded-md border border-gray-300 text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                rows={2}
+                placeholder="e.g. Cutting finished, 20 t-shirts stitched and passed QC..."
+                value={batchData.notes}
+                onChange={(e) => setBatchData({ ...batchData, notes: e.target.value })}
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsBatchOpen(false)} className="border-gray-300">
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmittingBatch} className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium">
+                {isSubmittingBatch ? "Logging Output..." : "Save Batch Entry"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 2: COMPLETE / SHORT-CLOSE ORDER */}
+      <Dialog open={isCloseModalOpen} onOpenChange={setIsCloseModalOpen}>
+        <DialogContent className="max-w-md bg-white border border-gray-200">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <FiCheckSquare className="text-amber-600" /> Complete / Close Work Order
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Lock production output and mark this order as Completed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-xs space-y-1.5 text-amber-900">
+              <div className="font-semibold flex items-center gap-1.5">
+                <FiInfo className="text-amber-700" /> Order Summary upon Closing:
+              </div>
+              <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-amber-800">
+                <li>Target Quantity: <strong>{targetQty} {order.unit || "Pcs"}</strong></li>
+                <li>Actual Produced Output: <strong>{currentProduced} {order.unit || "Pcs"}</strong></li>
+                {currentProduced < targetQty && (
+                  <li className="text-red-700 font-semibold">
+                    Short-closing at {currentProduced} pcs (Deficit of {targetQty - currentProduced} pcs).
+                  </li>
+                )}
+                <li>Final invoicing will bill the client for the actual <strong>{currentProduced} pcs</strong>.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-700">Closing Reason / Remarks</Label>
+              <textarea
+                className="w-full p-2.5 rounded-md border border-gray-300 text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                rows={2}
+                placeholder="e.g. Raw materials finished, order finalized at 800 pcs..."
+                value={closingNotes}
+                onChange={(e) => setClosingNotes(e.target.value)}
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsCloseModalOpen(false)} className="border-gray-300">
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleCloseOrder} 
+                disabled={isClosingOrder} 
+                className="bg-amber-600 hover:bg-amber-700 text-white font-medium"
+              >
+                {isClosingOrder ? "Closing Order..." : "Confirm & Complete Order"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 3: GENERATE FINAL SALES INVOICE */}
+      <Dialog open={isInvoiceModalOpen} onOpenChange={setIsInvoiceModalOpen}>
+        <DialogContent className="max-w-md bg-white border border-gray-200">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <FiFileText className="text-emerald-600" /> Generate Final Sales Invoice
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              Create official wholesale sales invoice & post to client ledger.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2 text-xs">
+              <div className="flex justify-between text-gray-600">
+                <span>Client / Customer:</span>
+                <strong className="text-gray-900">{order.client?.name}</strong>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Garment / Style:</span>
+                <strong className="text-gray-900">{order.orderTitle || order.item?.name}</strong>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Billing Quantity (Actual):</span>
+                <strong className="text-emerald-700">{billingQty} pcs</strong>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Unit Rate:</span>
+                <strong className="text-gray-900">৳{unitPrice}</strong>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-gray-200 text-sm">
+                <span className="font-bold text-gray-900">Grand Total Invoice:</span>
+                <strong className="text-emerald-700 font-bold">৳{totalBillableAmount.toLocaleString()}</strong>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-700">Invoice Remarks (Optional)</Label>
+              <textarea
+                className="w-full p-2.5 rounded-md border border-gray-300 text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                rows={2}
+                placeholder="Notes to appear on invoice..."
+                value={invoiceNotes}
+                onChange={(e) => setInvoiceNotes(e.target.value)}
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsInvoiceModalOpen(false)} className="border-gray-300">
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleGenerateInvoice} 
+                disabled={isGeneratingInvoice} 
+                className="bg-gray-900 hover:bg-black text-white font-medium"
+              >
+                {isGeneratingInvoice ? "Generating..." : "Confirm & Issue Invoice"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL 4: CREATE DELIVERY CHALLAN */}
       <Dialog open={isDeliveryOpen} onOpenChange={setIsDeliveryOpen}>
         <DialogContent className="max-w-md bg-white border border-gray-200">
           <DialogHeader>
@@ -737,14 +1368,14 @@ export default function OrderDetailPage() {
               <Input
                 type="number"
                 min="1"
-                max={Math.max(1, producedQty)}
+                max={Math.max(1, currentProduced)}
                 value={deliveryData.deliveredQty}
                 onChange={(e) => setDeliveryData({ ...deliveryData, deliveredQty: Number(e.target.value) })}
                 required
                 className="border-gray-300 focus:ring-gray-900"
               />
               <span className="text-[11px] text-gray-500 block">
-                Produced ready to dispatch: {Math.max(0, producedQty - totalDelivered)} pcs
+                Produced ready to dispatch: {Math.max(0, currentProduced - totalDelivered)} pcs
               </span>
             </div>
 
@@ -793,7 +1424,7 @@ export default function OrderDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DELETE CONFIRMATION MODAL */}
+      {/* MODAL 5: DELETE CONFIRMATION */}
       <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <DialogContent className="max-w-md bg-white border border-gray-200">
           <DialogHeader>

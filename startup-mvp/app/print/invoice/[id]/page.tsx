@@ -78,8 +78,9 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
     ? (posSettingsRaw.settings as any)
     : {
         paperSize: "80mm",
-        showHeaderLogo: false,
-        headerText: "Ferrari Fashion",
+        showHeaderLogo: true,
+        logoUrl: "/logo.png",
+        headerText: "RAFI FASHION",
         subHeaderText: "BIN 004601696-0102 | Mushak 6.3",
         footerText: "Thank you for shopping with us!",
         showBiller: true,
@@ -115,6 +116,11 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
       ? "max-w-4xl px-12" 
       : "max-w-[380px]"; // 80mm
 
+  const companyLogo = posSettings.logoUrl || "/logo.png";
+  const companyTitle = (!posSettings.headerText || posSettings.headerText.toLowerCase().includes("ferrari"))
+    ? "RAFI FASHION"
+    : posSettings.headerText;
+
   return (
     <div className={`bg-white text-black min-h-screen p-6 text-xs mx-auto font-sans relative ${widthClass}`}>
       <style dangerouslySetInnerHTML={{ __html: `
@@ -140,18 +146,17 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
 
       <PrintButton />
       
-      {posSettings.showHeaderLogo && posSettings.logoUrl && (
-        <div className="flex justify-center mb-3 print:mb-2">
-          <img
-            src={posSettings.logoUrl}
-            alt="Logo"
-            className="max-h-12 object-contain"
-          />
-        </div>
-      )}
+      {/* Brand Logo */}
+      <div className="flex justify-center mb-2 print:mb-2">
+        <img
+          src={companyLogo}
+          alt="RAFI FASHION Logo"
+          className="max-h-14 w-auto object-contain"
+        />
+      </div>
 
-      <div className="text-center mb-6">
-        <h1 className="text-lg font-bold uppercase">{posSettings.headerText || "Ferrari Fashion"}</h1>
+      <div className="text-center mb-5">
+        <h1 className="text-lg font-bold uppercase tracking-wider">{companyTitle}</h1>
         {posSettings.subHeaderText && <p className="text-[10px] text-gray-600">{posSettings.subHeaderText}</p>}
         <p className="font-bold mt-1 text-xs">
           {sale.orderType === "EXCHANGE" ? "Exchange Invoice No:" : isReturn ? "Return Invoice No:" : "Invoice No:"} {sale.saleNumber}
@@ -167,7 +172,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <div className="text-right">
           <p>Date: {sale.createdAt.toLocaleDateString()}</p>
           <p>Time: {sale.createdAt.toLocaleTimeString()}</p>
-          <p>Outlet: {sale.warehouse?.name || posSettings.headerText || "Ferrari Fashion"}</p>
+          <p>Outlet: {sale.warehouse?.name || companyTitle}</p>
         </div>
       </div>
 

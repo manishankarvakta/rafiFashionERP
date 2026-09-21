@@ -8,6 +8,19 @@ export default function PrintButton() {
 
   useEffect(() => {
     setMounted(true);
+
+    const isInsideIframe = typeof window !== "undefined" && window.self !== window.top;
+
+    const timer = setTimeout(() => {
+      if (isInsideIframe) {
+        if (window.parent && typeof (window.parent as any).triggerIframePrint === "function") {
+          (window.parent as any).triggerIframePrint();
+          delete (window.parent as any).triggerIframePrint;
+        }
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
   }, []);
 
   if (!mounted) return null;
