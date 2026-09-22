@@ -160,12 +160,17 @@ export default function OrdersPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {orders.map((order) => {
+            const isFinalized = Boolean(order.saleInvoice) || order.productionStatus === "COMPLETED" || order.productionStatus === "DELIVERED";
             const producedQty = Number(order.producedQuantity || 0);
             const targetQty = Number(order.targetQuantity || 1);
             const progressPercent = Math.min(100, Math.round((producedQty / targetQty) * 100));
             const totalDelivered = (order.deliveries || []).reduce((sum: number, d: any) => sum + Number(d.deliveredQty || 0), 0);
             const displayTitle = order.orderTitle || order.item?.name || "Custom Work Order";
             const unitSymbol = order.unit || order.item?.unit?.symbol || "Pcs";
+            const effectiveOutputQty = producedQty > 0 ? producedQty : (totalDelivered > 0 ? totalDelivered : targetQty);
+            const finalTotalAmount = order.saleInvoice?.grandTotal 
+              ? Number(order.saleInvoice.grandTotal) 
+              : (isFinalized ? effectiveOutputQty * Number(order.unitPrice || 0) : Number(order.totalAmount || 0));
 
             return (
               <Card key={order.id} className="hover:shadow-md transition-shadow border">
@@ -198,11 +203,28 @@ export default function OrdersPage() {
                           {displayTitle}
                         </span>
                         <span>•</span>
-                        <span>Target: <strong className="text-gray-900 dark:text-white">{order.targetQuantity} {unitSymbol}</strong></span>
-                        <span>•</span>
-                        <span>Rate: <strong>৳{Number(order.unitPrice).toFixed(2)}</strong></span>
-                        <span>•</span>
-                        <span>Total: <strong className="text-emerald-600 dark:text-emerald-400">৳{Number(order.totalAmount).toFixed(2)}</strong></span>
+                        {isFinalized ? (
+                          <>
+                            <span>
+                              Output: <strong className="text-gray-900 dark:text-white">{effectiveOutputQty} {unitSymbol}</strong>
+                              {targetQty !== effectiveOutputQty && (
+                                <span className="text-xs text-muted-foreground ml-1">(Target: {targetQty})</span>
+                              )}
+                            </span>
+                            <span>•</span>
+                            <span>Rate: <strong>৳{Number(order.unitPrice).toFixed(2)}</strong></span>
+                            <span>•</span>
+                            <span>Total: <strong className="text-emerald-600 dark:text-emerald-400">৳{finalTotalAmount.toFixed(2)}</strong></span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Target: <strong className="text-gray-900 dark:text-white">{order.targetQuantity} {unitSymbol}</strong></span>
+                            <span>•</span>
+                            <span>Rate: <strong>৳{Number(order.unitPrice).toFixed(2)}</strong></span>
+                            <span>•</span>
+                            <span>Total: <strong className="text-emerald-600 dark:text-emerald-400">৳{Number(order.totalAmount).toFixed(2)}</strong></span>
+                          </>
+                        )}
                       </div>
 
                       {(order.fabricDetails || order.colorSpecs) && (
@@ -225,16 +247,22 @@ export default function OrdersPage() {
                     <div className="w-full lg:w-72 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border">
                       <div className="flex justify-between items-center text-xs mb-1.5">
                         <span className="font-medium text-gray-600 dark:text-gray-300">Production Output</span>
-                        <span className="font-bold text-gray-900 dark:text-white">
-                          {producedQty} / {targetQty} {unitSymbol} ({progressPercent}%)
-                        </span>
+                        {isFinalized ? (
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                            {effectiveOutputQty} {unitSymbol} (100% Complete)
+                          </span>
+                        ) : (
+                          <span className="font-bold text-gray-900 dark:text-white">
+                            {producedQty} / {targetQty} {unitSymbol} ({progressPercent}%)
+                          </span>
+                        )}
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
                         <div
                           className={`h-2.5 rounded-full transition-all duration-300 ${
-                            progressPercent >= 100 ? "bg-emerald-500" : "bg-primary"
+                            isFinalized || progressPercent >= 100 ? "bg-emerald-500" : "bg-primary"
                           }`}
-                          style={{ width: `${progressPercent}%` }}
+                          style={{ width: isFinalized ? "100%" : `${progressPercent}%` }}
                         ></div>
                       </div>
                       <div className="flex justify-between text-[11px] text-muted-foreground mt-1.5">

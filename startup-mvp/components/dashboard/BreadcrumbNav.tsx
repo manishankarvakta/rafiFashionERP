@@ -22,6 +22,7 @@ import { getGRNById } from "@/app/(dashboard)/dashboard/procurements/grn/_action
 import { getTPNById } from "@/app/(dashboard)/dashboard/procurements/tpn/_actions/tpn.action";
 import { getReturnToVendorById } from "@/app/(dashboard)/dashboard/procurements/rtv/_actions/rtv.action";
 import { getDamage } from "@/app/(dashboard)/dashboard/inventory/damage/_actions/damage.action";
+import { getWorkOrderById } from "@/app/(dashboard)/dashboard/orders/_actions/work-order.action";
 
 
 // Map route paths to display names
@@ -309,6 +310,11 @@ export default function BreadcrumbNav({ className }: BreadcrumbNavProps) {
   const isClientEditMatch = pathname.match(/^\/dashboard\/clients\/([^\/]+)\/edit$/);
   const isClientDetailsPageMatch = pathname.match(/^\/dashboard\/clients\/details$/);
   const clientId = isClientDetailMatch?.[1] || isClientEditMatch?.[1] || (isClientDetailsPageMatch ? searchParams.get("id") : null);
+
+  // Check if we're on a work order / order detail or edit page
+  const isWorkOrderDetailMatch = pathname.match(/^\/(?:dashboard\/orders|dashboard\/work-orders)\/([^\/]+)$/);
+  const isWorkOrderEditMatch = pathname.match(/^\/(?:dashboard\/orders|dashboard\/work-orders)\/([^\/]+)\/edit$/);
+  const workOrderId = isWorkOrderDetailMatch?.[1] || isWorkOrderEditMatch?.[1] || null;
 
   // Fetch warehouse name when on warehouse detail/edit page
   useEffect(() => {
@@ -602,6 +608,33 @@ export default function BreadcrumbNav({ className }: BreadcrumbNavProps) {
     fetchClientCode();
     return () => { cancelled = true; };
   }, [clientId]);
+
+  // Fetch Work Order (Order) code / orderNo when on detail or edit page
+  useEffect(() => {
+    if (!workOrderId || workOrderId === "add" || workOrderId === "create") {
+      return;
+    }
+
+    let cancelled = false;
+    async function fetchWorkOrder() {
+      try {
+        const result = await getWorkOrderById(workOrderId!);
+        if (!cancelled && result.success && result.order) {
+          setWorkOrderCode(result.order.orderNo);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error fetching work order:", error);
+        }
+      }
+    }
+
+    fetchWorkOrder();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workOrderId]);
 
   // If we're at the root dashboard, show just "Dashboard"
   if (pathname === "/dashboard" || items.length === 1) {
@@ -1000,27 +1033,26 @@ export default function BreadcrumbNav({ className }: BreadcrumbNavProps) {
     }
   }
 
-  // If we're on a work order detail or edit page, use work order code
-  const isWorkOrderDetail = pathname.match(/^\/dashboard\/work-orders\/([^\/]+)$/);
-  const isWorkOrderEdit = pathname.match(/^\/dashboard\/work-orders\/([^\/]+)\/edit$/);
-  
-  // For work order routes, replace the ID segment with "Work Orders" as parent
-  if (isWorkOrderDetail || isWorkOrderEdit) {
-    // Find the "Work Orders" item (should be before the ID)
-    const workOrdersItem = items.find(item => item.path === "/dashboard/work-orders");
-    if (workOrdersItem) {
-      parentItem = workOrdersItem;
-    } else {
-      // If not found, create a parent item pointing to work orders list
-      parentItem = { path: "/dashboard/work-orders", label: "Work Orders" };
-    }
-    
-    // Update current label with work order code
-    if (workOrderCode) {
-      currentLabel = isWorkOrderEdit ? `Edit ${workOrderCode}` : workOrderCode;
-    } else {
-      // Show loading state or default while fetching
-      currentLabel = isWorkOrderEdit ? "Edit Work Order" : "Work Order Details";
+  // If we're on a work order (orders) detail or edit page, use work order code
+  if (isWorkOrderDetailMatch || isWorkOrderEditMatch) {
+    if (workOrderId && workOrderId !== "add" && workOrderId !== "create") {
+      const isOrdersRoute = pathname.startsWith("/dashboard/orders");
+      const parentPath = isOrdersRoute ? "/dashboard/orders" : "/dashboard/work-orders";
+      const parentLabel = isOrdersRoute ? "Orders" : "Work Orders";
+
+      const workOrdersItem = items.find(item => item.path === parentPath);
+      if (workOrdersItem) {
+        parentItem = workOrdersItem;
+      } else {
+        parentItem = { path: parentPath, label: parentLabel };
+      }
+      
+      // Update current label with work order code
+      if (workOrderCode) {
+        currentLabel = isWorkOrderEditMatch ? `Edit ${workOrderCode}` : workOrderCode;
+      } else {
+        currentLabel = isWorkOrderEditMatch ? "Edit Work Order" : "Work Order Details";
+      }
     }
   }
 

@@ -376,6 +376,8 @@ export default function OrderDetailPage() {
   // Actual billing quantity is delivered qty (if delivered) or produced qty or target qty
   const billingQty = totalDelivered > 0 ? totalDelivered : (currentProduced > 0 ? currentProduced : targetQty);
   const totalBillableAmount = billingQty * unitPrice;
+  const isOrderConfirmed = order.productionStatus === "COMPLETED" || order.productionStatus === "DELIVERED";
+  const isFinalized = Boolean(order.saleInvoice) || isOrderConfirmed;
 
   // Calculate Material Balance (Stock In vs Stock Out)
   const materialSummaryMap = new Map<string, MaterialBalanceItem>();
@@ -460,6 +462,17 @@ export default function OrderDetailPage() {
             </Button>
           </Link>
 
+          {order.productionStatus !== "COMPLETED" && order.productionStatus !== "DELIVERED" && (
+            <Button
+              onClick={() => setIsCloseModalOpen(true)}
+              variant="outline"
+              size="sm"
+              className="gap-1.5 border-amber-300 text-amber-900 hover:bg-amber-50 font-medium shadow-sm"
+            >
+              <FiCheckSquare className="w-4 h-4 text-amber-600" /> Complete / Close
+            </Button>
+          )}
+
           <Button 
             onClick={() => {
               setDeliveryData((prev) => ({
@@ -487,9 +500,21 @@ export default function OrderDetailPage() {
             </Button>
           ) : (
             <Button 
-              onClick={() => setIsInvoiceModalOpen(true)}
+              onClick={() => {
+                if (!isOrderConfirmed) {
+                  toast.error("Please complete or close the order before generating the invoice.");
+                  return;
+                }
+                setIsInvoiceModalOpen(true);
+              }}
+              disabled={!isOrderConfirmed}
               size="sm" 
-              className="gap-1.5 bg-gray-900 hover:bg-black text-white font-medium shadow-sm"
+              className={`gap-1.5 font-medium shadow-sm ${
+                isOrderConfirmed 
+                  ? "bg-gray-900 hover:bg-black text-white" 
+                  : "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200 hover:bg-gray-100"
+              }`}
+              title={!isOrderConfirmed ? "Order must be completed/confirmed before issuing invoice" : ""}
             >
               <FiFileText className="h-4 w-4" /> Generate Final Invoice
             </Button>
@@ -610,17 +635,6 @@ export default function OrderDetailPage() {
                   >
                     <FiPlus className="w-3.5 h-3.5" /> Log Batch Output
                   </Button>
-                  
-                  {order.productionStatus !== "COMPLETED" && order.productionStatus !== "DELIVERED" && (
-                    <Button
-                      onClick={() => setIsCloseModalOpen(true)}
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 border-amber-300 text-amber-900 hover:bg-amber-50 font-medium text-xs h-8 shadow-sm"
-                    >
-                      <FiCheckSquare className="w-3.5 h-3.5 text-amber-600" /> Complete / Close
-                    </Button>
-                  )}
                 </div>
               </div>
 
@@ -630,25 +644,27 @@ export default function OrderDetailPage() {
                   <span className="font-semibold text-gray-700">
                     Production Progress: <strong className="text-gray-900">{currentProduced}</strong> of {targetQty} {order.unit || "Pcs"}
                   </span>
-                  <span className="font-bold text-gray-900">
-                    {progressPercent}% Complete
+                  <span className={`font-bold ${isFinalized ? "text-emerald-600" : "text-gray-900"}`}>
+                    {isFinalized ? "100% Complete" : `${progressPercent}% Complete`}
                   </span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
                   <div
                     className={`h-2.5 rounded-full transition-all duration-300 ${
-                      progressPercent >= 100 || order.productionStatus === "COMPLETED" || order.productionStatus === "DELIVERED" 
+                      isFinalized || progressPercent >= 100
                         ? "bg-emerald-500" 
                         : "bg-gray-900"
                     }`}
-                    style={{ width: `${Math.min(100, progressPercent)}%` }}
+                    style={{ width: isFinalized ? "100%" : `${Math.min(100, progressPercent)}%` }}
                   ></div>
                 </div>
 
                 {/* Sub stats */}
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
                   <span>Target: <strong>{targetQty}</strong></span>
-                  <span>Remaining: <strong className={remainingQty > 0 ? "text-amber-600" : "text-emerald-600"}>{remainingQty} {order.unit || "Pcs"}</strong></span>
+                  <span>Remaining: <strong className={isFinalized || remainingQty === 0 ? "text-emerald-600" : "text-amber-600"}>
+                    {isFinalized ? `0 ${order.unit || "Pcs"} (Finalized)` : `${remainingQty} ${order.unit || "Pcs"}`}
+                  </strong></span>
                   <span>Total Defects / Rejected: <strong className="text-red-600">{order.rejectedQuantity || 0}</strong></span>
                 </div>
               </div>
@@ -1053,22 +1069,47 @@ export default function OrderDetailPage() {
                     </div>
                   </div>
 
-                  {currentProduced < targetQty && (
-                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-start gap-1.5">
-                      <FiInfo className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-                      <span>
-                        Target was {targetQty} pcs, but {currentProduced} pcs produced. Final invoice will be calculated exactly on <strong>{billingQty} pcs</strong>.
-                      </span>
-                    </div>
-                  )}
+                  {!isOrderConfirmed ? (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs space-y-1.5 text-amber-900">
+                        <div className="flex items-center gap-1.5 font-semibold">
+                          <FiAlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          Order Not Confirmed / Completed
+                        </div>
+                        <p className="text-[11px] text-amber-700 leading-relaxed">
+                          This order is currently <strong>{order.productionStatus}</strong>. Please finish production batches or click <strong>Complete / Close</strong> at the top to confirm and finalize this order before generating the invoice.
+                        </p>
+                      </div>
 
-                  <Button
-                    onClick={() => setIsInvoiceModalOpen(true)}
-                    className="w-full gap-2 bg-gray-900 hover:bg-black text-white text-xs font-medium h-9 shadow-sm"
-                  >
-                    <FiFileText className="w-4 h-4" />
-                    Generate Final Invoice & Settle
-                  </Button>
+                      <Button
+                        disabled
+                        className="w-full gap-2 bg-gray-100 text-gray-400 border border-gray-200 text-xs font-medium h-9 cursor-not-allowed hover:bg-gray-100"
+                        title="Order must be completed or confirmed first"
+                      >
+                        <FiFileText className="w-4 h-4" />
+                        Generate Final Invoice & Settle
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {currentProduced < targetQty && (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-start gap-1.5">
+                          <FiInfo className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                          <span>
+                            Target was {targetQty} pcs, but {currentProduced} pcs produced. Final invoice will be calculated exactly on <strong>{billingQty} pcs</strong>.
+                          </span>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={() => setIsInvoiceModalOpen(true)}
+                        className="w-full gap-2 bg-gray-900 hover:bg-black text-white text-xs font-medium h-9 shadow-sm"
+                      >
+                        <FiFileText className="w-4 h-4" />
+                        Generate Final Invoice & Settle
+                      </Button>
+                    </>
+                  )}
                 </div>
               )}
             </CardContent>

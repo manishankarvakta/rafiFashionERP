@@ -688,6 +688,12 @@ export async function generateWorkOrderInvoice(workOrderId: string, input: Gener
     if (order.saleInvoiceId) {
       return { success: false, error: "Invoice already generated for this work order." };
     }
+    if (order.productionStatus !== WorkOrderStatus.COMPLETED && order.productionStatus !== WorkOrderStatus.DELIVERED) {
+      return {
+        success: false,
+        error: "Work order must be completed/confirmed before generating the final sales invoice.",
+      };
+    }
 
     // Determine quantity to bill (total delivered or target qty)
     const deliveredQty = order.deliveries.reduce((sum, d) => sum + d.deliveredQty, 0);
