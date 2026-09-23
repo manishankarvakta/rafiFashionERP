@@ -53,7 +53,7 @@ const VoucherPrintTemplate = forwardRef<HTMLDivElement, VoucherPrintTemplateProp
         <div className="border-b-2 border-slate-800 pb-4 mb-6">
           <div className="flex justify-between items-start">
              <div>
-                <h1 className="text-2xl font-bold uppercase tracking-wide text-slate-900">Ferrari Fashion </h1>
+                <h1 className="text-2xl font-bold uppercase tracking-wide text-slate-900">RAFI FASHION</h1>
                 <p className="text-sm text-slate-600">Company Address Line 1</p>
                 <p className="text-sm text-slate-600">City, Country, ZIP</p>
                 <p className="text-sm text-slate-600">Phone: +880 123 456 7890</p>

@@ -395,13 +395,11 @@ export default function DashboardSidebar({
   }
 
   
-  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(() => {
-    // Auto-expand menus if current path matches any sub-menu
-    const expanded = new Set<string>();
-    menuItems.forEach((item) => {
+  // Helper to find the active menu label based on current pathname
+  const findActiveMenuLabel = () => {
+    for (const item of menuItems) {
       if (item.subMenu) {
         const hasActiveChild = item.subMenu.some((subItem) => {
-          // Exact match or pathname starts with subItem.href followed by / or end of string
           if (pathname === subItem.href) return true;
           if (pathname?.startsWith(subItem.href)) {
             const nextChar = pathname[subItem.href.length];
@@ -410,7 +408,7 @@ export default function DashboardSidebar({
           return false;
         });
         if (hasActiveChild) {
-          expanded.add(item.label);
+          return item.label;
         }
       }
       if (item.subMenuGroups) {
@@ -425,26 +423,20 @@ export default function DashboardSidebar({
           })
         );
         if (hasActiveChild) {
-          expanded.add(item.label);
+          return item.label;
         }
       }
-    });
-    return expanded;
-  });
-
-  const toggleMenu = (label: string) => {
-    setExpandedMenus((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) {
-        next.delete(label);
-      } else {
-        next.add(label);
-      }
-      return next;
-    });
+    }
+    return null;
   };
 
-  const isMenuExpanded = (label: string) => expandedMenus.has(label);
+  const [openMenu, setOpenMenu] = useState<string | null>(() => findActiveMenuLabel());
+
+  const toggleMenu = (label: string) => {
+    setOpenMenu((prev) => (prev === label ? null : label));
+  };
+
+  const isMenuExpanded = (label: string) => openMenu === label;
 
   const isSubMenuActive = (subMenu: SubMenuItem[]) => {
     return subMenu.some((subItem) => {

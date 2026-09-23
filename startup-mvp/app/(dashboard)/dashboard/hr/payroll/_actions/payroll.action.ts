@@ -319,7 +319,8 @@ export async function generatePayroll(month: number, year: number, options?: Gen
       if (curr.status === "ABSENT") {
         acc[empId].absentDays += 1;
       } else if (curr.status === "HALF_DAY") {
-        acc[empId].absentDays += 0.5;
+        const halfDayWeight = (100 - (calc.halfDayGrossSalaryPayPercentage ?? 50)) / 100;
+        acc[empId].absentDays += halfDayWeight;
       } else if (curr.status === "LEAVE") {
         // Only deduct if leave is unpaid
         const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
@@ -535,15 +536,24 @@ export async function generatePayroll(month: number, year: number, options?: Gen
       });
 
       const att = empAttendance.reduce((acc, curr) => {
+<<<<<<< HEAD
         const dayVal = resolveAttendanceDayValues(curr, emp, weekends, monthHolidays);
 
         if (dayVal.status === "ABSENT") {
           acc.absentDays += 1;
         } else if (dayVal.status === "HALF_DAY") {
+=======
+        if (curr.status === "ABSENT") {
+          acc.fullAbsentDays += 1;
+          acc.absentDays += 1;
+        } else if (curr.status === "HALF_DAY") {
+          acc.halfDaysCount += 1;
+>>>>>>> ratul-exm
           acc.absentDays += 0.5;
         } else if (dayVal.status === "LEAVE") {
           const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
           if (!isPaid) {
+            acc.fullAbsentDays += 1;
             acc.absentDays += 1;
           }
         }
@@ -564,6 +574,8 @@ export async function generatePayroll(month: number, year: number, options?: Gen
 
         return acc;
       }, {
+        fullAbsentDays: 0,
+        halfDaysCount: 0,
         absentDays: 0,
         otHours: 0,
         lateCountTotal: 0,
@@ -594,16 +606,24 @@ export async function generatePayroll(month: number, year: number, options?: Gen
         ? basic * (calc.defaultFestivalBonusPct / 100)
         : 0;
 
-      // Absent Deduction (GROSS vs BASIC rate basis)
+      // Absent Deduction (GROSS vs BASIC rate basis for Full Absences)
       const absentBasis = calc.absentDeductionBasis || "BASIC";
       const absentNumerator = absentBasis === "GROSS" ? rawSalary : originalBasic;
       const dailyRateForAbsent = absentNumerator / payDivisor;
+
+      // Half Day Deduction (Strictly calculated on Total Gross Salary Basis)
+      const dailyGrossRate = rawSalary / payDivisor;
+      const halfDayPayPct = calc.halfDayGrossSalaryPayPercentage ?? 50;
+      const halfDayDeductionFactor = Math.max(0, (100 - halfDayPayPct) / 100);
+
       let absentDeduction = 0;
       const applyAbsentPenalty = empTypePolicies?.attendancePolicy 
         ? empTypePolicies.attendancePolicy.applyAbsentPenalty 
         : true;
       if (applyAbsentPenalty) {
-        absentDeduction = Number((att.absentDays * dailyRateForAbsent).toFixed(2));
+        const fullAbsentDeduction = att.fullAbsentDays * dailyRateForAbsent;
+        const halfDayDeduction = att.halfDaysCount * (dailyGrossRate * halfDayDeductionFactor);
+        absentDeduction = Number((fullAbsentDeduction + halfDayDeduction).toFixed(2));
       }
 
       // Late policy monthly calculation using originalRawSalary
@@ -2035,13 +2055,26 @@ export async function recalculatePayroll(payrollId: string) {
       });
 
       const att = empAttendance.reduce((acc, curr) => {
+<<<<<<< HEAD
         const dayVal = resolveAttendanceDayValues(curr, emp, weekends, monthHolidays);
 
         if (dayVal.status === "ABSENT") acc.absentDays += 1;
         else if (dayVal.status === "HALF_DAY") acc.absentDays += 0.5;
         else if (dayVal.status === "LEAVE") {
+=======
+        if (curr.status === "ABSENT") {
+          acc.fullAbsentDays += 1;
+          acc.absentDays += 1;
+        } else if (curr.status === "HALF_DAY") {
+          acc.halfDaysCount += 1;
+          acc.absentDays += 0.5;
+        } else if (curr.status === "LEAVE") {
+>>>>>>> ratul-exm
           const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
-          if (!isPaid) acc.absentDays += 1;
+          if (!isPaid) {
+            acc.fullAbsentDays += 1;
+            acc.absentDays += 1;
+          }
         }
         acc.otHours += dayVal.otHours;
         acc.lateCountTotal += dayVal.lateCountTotal;
@@ -2059,6 +2092,8 @@ export async function recalculatePayroll(payrollId: string) {
 
         return acc;
       }, {
+        fullAbsentDays: 0,
+        halfDaysCount: 0,
         absentDays: 0,
         otHours: 0,
         lateCountTotal: 0,
@@ -2081,16 +2116,24 @@ export async function recalculatePayroll(payrollId: string) {
         otAmount = Number((effectiveOtHours * hourlyRateForOT * calc.otMultiplier).toFixed(2));
       }
 
-      // Absent Deduction (GROSS vs BASIC rate basis)
+      // Absent Deduction (GROSS vs BASIC rate basis for Full Absences)
       const absentBasis = calc.absentDeductionBasis || "BASIC";
       const absentNumerator = absentBasis === "GROSS" ? rawSalary : originalBasic;
       const dailyRateForAbsent = absentNumerator / payDivisor;
+
+      // Half Day Deduction (Strictly calculated on Total Gross Salary Basis)
+      const dailyGrossRate = rawSalary / payDivisor;
+      const halfDayPayPct = calc.halfDayGrossSalaryPayPercentage ?? 50;
+      const halfDayDeductionFactor = Math.max(0, (100 - halfDayPayPct) / 100);
+
       let absentDeduction = 0;
       const applyAbsentPenalty = empTypePolicies?.attendancePolicy
         ? empTypePolicies.attendancePolicy.applyAbsentPenalty
         : true;
       if (applyAbsentPenalty) {
-        absentDeduction = Number((att.absentDays * dailyRateForAbsent).toFixed(2));
+        const fullAbsentDeduction = att.fullAbsentDays * dailyRateForAbsent;
+        const halfDayDeduction = att.halfDaysCount * (dailyGrossRate * halfDayDeductionFactor);
+        absentDeduction = Number((fullAbsentDeduction + halfDayDeduction).toFixed(2));
       }
 
       let lateDeduction = 0;

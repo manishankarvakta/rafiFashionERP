@@ -45,6 +45,7 @@ import {
   FiTag,
   FiAlertTriangle,
   FiAward,
+  FiInbox,
 } from "react-icons/fi";
 import Logo from "@/components/layout/logo";
 import { SlCalculator } from "react-icons/sl";
@@ -85,6 +86,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   FiRefreshCw,
   FiAlertTriangle,
   FiAward,
+  FiInbox,
   SlCalculator,
   MdOutlineCategory,
 };
@@ -102,10 +104,9 @@ export default function DashboardSidebar({
   const dispatch = useAppDispatch();
   const isSidebarOpen = useAppSelector((state) => state.ui.isSidebarOpen);
 
-  // Auto-expand menus if current path matches any sub-menu
-  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(() => {
-    const expanded = new Set<string>();
-    menuItems.forEach((item) => {
+  // Helper to find the active menu label based on current pathname
+  const findActiveMenuLabel = () => {
+    for (const item of menuItems) {
       if (item.subMenu) {
         const hasActiveChild = item.subMenu.some((subItem) => {
           if (pathname === subItem.href) return true;
@@ -116,7 +117,7 @@ export default function DashboardSidebar({
           return false;
         });
         if (hasActiveChild) {
-          expanded.add(item.label);
+          return item.label;
         }
       }
       if (item.subMenuGroups) {
@@ -131,26 +132,29 @@ export default function DashboardSidebar({
           })
         );
         if (hasActiveChild) {
-          expanded.add(item.label);
+          return item.label;
         }
       }
-    });
-    return expanded;
-  });
-
-  const toggleMenu = (label: string) => {
-    setExpandedMenus((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) {
-        next.delete(label);
-      } else {
-        next.add(label);
-      }
-      return next;
-    });
+    }
+    return null;
   };
 
-  const isMenuExpanded = (label: string) => expandedMenus.has(label);
+  // State holding the single open menu label (accordion behavior)
+  const [openMenu, setOpenMenu] = useState<string | null>(() => findActiveMenuLabel());
+
+  // Update open menu when pathname changes
+  useEffect(() => {
+    const activeLabel = findActiveMenuLabel();
+    if (activeLabel) {
+      setOpenMenu(activeLabel);
+    }
+  }, [pathname, menuItems]);
+
+  const toggleMenu = (label: string) => {
+    setOpenMenu((prev) => (prev === label ? null : label));
+  };
+
+  const isMenuExpanded = (label: string) => openMenu === label;
 
   const isSubMenuActive = (subMenu: SubMenuItemData[]) => {
     return subMenu.some((subItem) => {

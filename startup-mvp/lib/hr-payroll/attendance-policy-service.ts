@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, AttendanceStatus } from "@prisma/client";
+import { differenceInMinutes } from "date-fns";
 import { getPayrollSettings, isConfiguredWeekend } from "@/lib/payroll-settings";
 import {
   calculateLateMinutes,
@@ -75,6 +76,12 @@ export interface DailyAttendancePolicyInput {
   isPublicHoliday: boolean;
   workedOnHoliday: boolean;
   grossSalary: number;
+  payrollSettings?: any;
+  thresholds?: {
+    enableWorkHoursThresholds?: boolean;
+    minHoursForFullDay?: number;
+    minHoursForHalfDay?: number;
+  } | null;
 }
 
 export interface DailyAttendancePolicyOutput {
@@ -125,14 +132,7 @@ export function calculateDailyAttendancePolicyValues(input: DailyAttendancePolic
       breakDuration: shift.breakDuration
     };
 
-    resolvedStatus = determineAttendanceStatus(
-      new Date(attendance.checkIn),
-      new Date(attendance.date),
-      shiftPolicy,
-      attendance.breakCheckIn ? new Date(attendance.breakCheckIn) : null
-    );
-
-    // Calculate work hours and OT hours dynamically based on new shift definitions
+    // Calculate work hours and OT hours dynamically based on shift definitions
     if (attendance.checkOut) {
       let breakDurationMins = 0;
       if (shiftPolicy.breakType === "FIXED") {
@@ -166,6 +166,20 @@ export function calculateDailyAttendancePolicyValues(input: DailyAttendancePolic
         workHours
       );
     }
+
+    const thresholds = input.thresholds || input.payrollSettings?.calculation || null;
+
+    resolvedStatus = determineAttendanceStatus(
+      new Date(attendance.checkIn),
+      new Date(attendance.date),
+      shiftPolicy,
+      attendance.breakCheckIn ? new Date(attendance.breakCheckIn) : null,
+      {
+        checkOut: attendance.checkOut ? new Date(attendance.checkOut) : null,
+        workHours,
+        thresholds,
+      }
+    );
 
     const isWorkedDay = 
       resolvedStatus === "PRESENT" || 
@@ -410,6 +424,7 @@ export async function applyDailyAttendancePolicyValues(
       isPublicHoliday,
       workedOnHoliday,
       grossSalary,
+      payrollSettings,
     });
 
     // Update attendance row policy calculation fields only
@@ -600,6 +615,7 @@ export async function reprocessAttendancePoliciesForDateRange(input: {
           isPublicHoliday,
           workedOnHoliday,
           grossSalary,
+          payrollSettings,
         });
 
         // Update database row

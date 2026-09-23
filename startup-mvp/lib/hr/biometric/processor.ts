@@ -16,6 +16,7 @@ import { applyDailyAttendancePolicyValues } from "@/lib/hr-payroll/attendance-po
 import { startOfDay, endOfDay, differenceInMinutes } from "date-fns";
 import { syncTimezoneFromDb } from "../shift-utils";
 import { revalidateBothPaths } from "@/lib/route-utils-server";
+import { getPayrollSettings } from "@/lib/payroll-settings";
 
 /**
  * Attendance Processor Service
@@ -24,6 +25,12 @@ import { revalidateBothPaths } from "@/lib/route-utils-server";
 export async function processBiometricAttendance(startDate: Date, endDate: Date, employeeId?: string) {
   try {
     await syncTimezoneFromDb();
+    const payrollSettings = await getPayrollSettings();
+    const workHoursThresholds = {
+      enableWorkHoursThresholds: payrollSettings?.calculation?.enableWorkHoursThresholds ?? true,
+      minHoursForFullDay: payrollSettings?.calculation?.minHoursForFullDay ?? 8,
+      minHoursForHalfDay: payrollSettings?.calculation?.minHoursForHalfDay ?? 4,
+    };
     
     console.log("⚙️ [PROCESS] Operation triggered for date range:", startDate, "-", endDate);
     const where: any = {
@@ -259,7 +266,11 @@ export async function processBiometricAttendance(startDate: Date, endDate: Date,
           breakLateCountValue = breakLateRes.lateCountValue;
         }
 
-        const status = determineAttendanceStatus(checkIn, date, shiftPolicy, breakCheckIn);
+        const status = determineAttendanceStatus(checkIn, date, shiftPolicy, breakCheckIn, {
+          checkOut,
+          workHours,
+          thresholds: workHoursThresholds,
+        });
 
         const existingKey = `${empId}_${dateKey}`;
         const existing = existingMap.get(existingKey);

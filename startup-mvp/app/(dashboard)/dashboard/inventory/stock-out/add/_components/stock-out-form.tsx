@@ -17,8 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Trash2, Search } from "lucide-react";
-import { createStockOut } from "../../_actions/stock-out.action";
+import { Plus, Trash2, Search, Layers, Info, Check, ArrowRight } from "lucide-react";
+import { createStockOut, getOrderMaterialsBalance } from "../../_actions/stock-out.action";
 import { getStock, getWarehouseStocks } from "../../../stock/_actions/stock.action";
 import { getItemVariants } from "../../../../master/items/_actions/item.action";
 import {
@@ -38,10 +38,12 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 
 const stockOutSchema = z.object({
   warehouseId: z.string().min(1, "Warehouse is required"),
   date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date"),
+  workOrderId: z.string().optional().nullable(),
   notes: z.string().optional(),
   items: z.array(z.object({
     itemId: z.string().min(1, "Item is required"),
@@ -58,6 +60,8 @@ type StockOutFormValues = z.infer<typeof stockOutSchema>;
 interface StockOutFormProps {
   warehouses: any[];
   items: any[]; 
+  workOrders?: any[];
+  initialWorkOrderId?: string;
   userContext?: {
     isNormalUser: boolean;
     defaultWarehouseId: string | null;
@@ -65,7 +69,14 @@ interface StockOutFormProps {
   initialData?: any;
 }
 
-export default function StockOutForm({ warehouses, items, userContext, initialData }: StockOutFormProps) {
+export default function StockOutForm({ 
+  warehouses, 
+  items, 
+  workOrders = [], 
+  initialWorkOrderId, 
+  userContext, 
+  initialData 
+}: StockOutFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -73,6 +84,13 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [itemSearch, setItemSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Work Order Materials Balance State
+  const [orderMaterialsLoading, setOrderMaterialsLoading] = useState(false);
+  const [orderMaterialsData, setOrderMaterialsData] = useState<{
+    order: any;
+    materials: any[];
+  } | null>(null);
 
   const [skuModalOpen, setSkuModalOpen] = useState(false);
   const [skuModalItem, setSkuModalItem] = useState<{ id: string; description: string; code: string } | null>(null);
@@ -86,6 +104,7 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
     defaultValues: {
       warehouseId: initialData?.warehouseId || userContext?.defaultWarehouseId || (warehouses.length > 0 ? warehouses[0].id : ""),
       date: initialData?.date ? new Date(initialData.date).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      workOrderId: initialData?.workOrderId || initialWorkOrderId || "",
       notes: initialData?.notes || "",
       items: initialData?.items?.length > 0 
         ? initialData.items.map((i: any) => ({
@@ -214,12 +233,106 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
     setSkuVariants([]);
   };
 
+  const watchedWorkOrderId = useWatch({
+    control: form.control,
+    name: "workOrderId",
+  });
+
+  useEffect(() => {
+    if (!watchedWorkOrderId) {
+      setOrderMaterialsData(null);
+      return;
+    }
+    const fetchOrderMaterials = async () => {
+      setOrderMaterialsLoading(true);
+      const res = await getOrderMaterialsBalance(watchedWorkOrderId);
+      if (res.success && res.order) {
+        setOrderMaterialsData({
+          order: res.order,
+          materials: res.materials || [],
+        });
+      } else {
+        setOrderMaterialsData(null);
+      }
+      setOrderMaterialsLoading(false);
+    };
+    fetchOrderMaterials();
+  }, [watchedWorkOrderId]);
+
+  const handleAddOrderMaterialToStockOut = (mat: any) => {
+    const availableQty = mat.balance > 0 ? mat.balance : 0;
+    const rate = mat.unitCost || 0;
+    
+    // Check if this item is already in list
+    const currentList = form.getValues("items") || [];
+    const isAlreadyPresent = currentList.some((i) => i.itemId === mat.itemId);
+
+    if (isAlreadyPresent) {
+      toast({
+        title: "Already in List",
+        description: `${mat.itemName} is already added to the stock out table.`,
+      });
+      return;
+    }
+
+    if (availableQty <= 0) {
+      toast({
+        title: "No Balance",
+        description: `${mat.itemName} has no available balance to stock out.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const firstEmptyIndex = currentList.findIndex((i) => !i.itemId);
+
+    if (firstEmptyIndex !== -1) {
+      form.setValue(`items.${firstEmptyIndex}.itemId`, mat.itemId);
+      form.setValue(`items.${firstEmptyIndex}.variantId`, null);
+      form.setValue(`items.${firstEmptyIndex}.description`, `${mat.itemName}${mat.itemCode ? ` (${mat.itemCode})` : ''}`);
+      form.setValue(`items.${firstEmptyIndex}.quantity`, availableQty);
+      form.setValue(`items.${firstEmptyIndex}.unitRate`, rate);
+      form.setValue(`items.${firstEmptyIndex}.amount`, Number((availableQty * rate).toFixed(2)));
+    } else {
+      append({
+        itemId: mat.itemId,
+        variantId: null,
+        description: `${mat.itemName}${mat.itemCode ? ` (${mat.itemCode})` : ''}`,
+        quantity: availableQty,
+        unitRate: rate,
+        amount: Number((availableQty * rate).toFixed(2)),
+      });
+    }
+
+    toast({
+      title: "Material Added",
+      description: `Added ${mat.itemName} (${availableQty} ${mat.unit}) to stock out list.`,
+    });
+  };
+
   const onSubmit = async (values: StockOutFormValues) => {
+    // If tied to a Work Order, validate that quantity out does not exceed order available balance
+    if (values.workOrderId && orderMaterialsData?.materials) {
+      for (const mat of orderMaterialsData.materials) {
+        const matchingItems = values.items.filter((i) => i.itemId === mat.itemId);
+        const totalRequestedQty = matchingItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+        if (totalRequestedQty > mat.balance) {
+          toast({
+            title: "Balance Exceeded",
+            description: `Total quantity for "${mat.itemName}" (${totalRequestedQty} ${mat.unit}) exceeds available order balance (${mat.balance} ${mat.unit}).`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
          warehouseId: values.warehouseId,
          date: new Date(values.date),
+         workOrderId: values.workOrderId || null,
          notes: values.notes,
          items: values.items.map(i => ({
              itemId: i.itemId,
@@ -349,10 +462,11 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      {/* 1. Header Information & Order Link */}
       <Card>
-        <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label>Warehouse</Label>
+            <Label>Warehouse *</Label>
             <Select 
               onValueChange={(val) => form.setValue("warehouseId", val)} 
               defaultValue={form.getValues("warehouseId")}
@@ -371,16 +485,150 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
           </div>
 
           <div className="space-y-2">
-            <Label>Date</Label>
+            <Label>Date *</Label>
             <Input type="date" {...form.register("date")} />
           </div>
 
-          <div className="col-span-1 md:col-span-2 space-y-2">
-            <Label>Notes</Label>
-            <Textarea {...form.register("notes")} placeholder="Reason for stock out..." />
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-blue-600" />
+              Link to Work Order (Optional)
+            </Label>
+            <select
+              className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 font-medium"
+              value={form.watch("workOrderId") || ""}
+              onChange={(e) => form.setValue("workOrderId", e.target.value)}
+            >
+              <option value="">-- No Order Link (General Stock Out) --</option>
+              {workOrders.map((wo) => (
+                <option key={wo.id} value={wo.id}>
+                  {wo.orderNo} {wo.client?.name ? `• ${wo.client.name}` : ""} {wo.orderTitle || wo.styleNo ? `(${wo.orderTitle || wo.styleNo})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="col-span-1 md:col-span-3 space-y-2">
+            <Label>Notes (Optional)</Label>
+            <Textarea {...form.register("notes")} placeholder="Reason for stock out or production issuance remarks..." />
           </div>
         </CardContent>
       </Card>
+
+      {/* 2. Work Order Raw Materials Stock In Preview (If Work Order is selected) */}
+      {watchedWorkOrderId && (
+        <Card className="border-blue-200 bg-blue-50/20 shadow-xs overflow-hidden">
+          <div className="bg-blue-50/80 border-b border-blue-100 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-bold text-blue-950 flex items-center gap-2">
+                <Layers className="h-4 w-4 text-blue-700" />
+                Work Order Stock-In Materials & Available Balance
+              </h4>
+              {orderMaterialsData?.order && (
+                <p className="text-xs text-blue-700 mt-0.5">
+                  Order: <strong className="text-blue-900">{orderMaterialsData.order.orderNo}</strong>
+                  {orderMaterialsData.order.client?.name && ` • Client: ${orderMaterialsData.order.client.name}`}
+                  {orderMaterialsData.order.orderTitle && ` • Style: ${orderMaterialsData.order.orderTitle}`}
+                </p>
+              )}
+            </div>
+            <Badge variant="outline" className="bg-white text-blue-800 border-blue-300 text-xs w-fit">
+              Order Stock In Tracker
+            </Badge>
+          </div>
+
+          <CardContent className="p-4">
+            {orderMaterialsLoading ? (
+              <div className="py-6 text-center text-xs text-blue-600 flex items-center justify-center gap-2">
+                <div className="animate-spin w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                Loading order materials balance...
+              </div>
+            ) : !orderMaterialsData || orderMaterialsData.materials.length === 0 ? (
+              <div className="p-4 text-center bg-white rounded-lg border border-dashed border-blue-200 text-xs text-blue-700">
+                <Info className="h-4 w-4 inline mr-1 text-blue-500" />
+                No Stock In raw materials recorded for this Work Order yet. You can still select products manually below.
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-blue-200 rounded-lg bg-white">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-blue-50/60 border-b border-blue-100 text-blue-900 font-semibold">
+                    <tr>
+                      <th className="p-2.5">Stocked In Material</th>
+                      <th className="p-2.5 text-right">Received (Stock In)</th>
+                      <th className="p-2.5 text-right">Already Issued (Stock Out)</th>
+                      <th className="p-2.5 text-right">Available Balance</th>
+                      <th className="p-2.5 text-center">Quick Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-blue-50 text-gray-800">
+                    {orderMaterialsData.materials.map((mat, idx) => {
+                      const isAlreadyInList = watchedItems.some((item: any) => item?.itemId === mat.itemId);
+                      const isZeroBalance = mat.balance <= 0;
+
+                      return (
+                        <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="p-2.5">
+                            <span className="font-semibold text-gray-900">{mat.itemName}</span>
+                            {mat.itemCode && <span className="text-[11px] text-gray-400 block">{mat.itemCode}</span>}
+                          </td>
+                          <td className="p-2.5 text-right font-medium text-blue-700">
+                            +{mat.totalIn} {mat.unit}
+                          </td>
+                          <td className="p-2.5 text-right font-medium text-amber-700">
+                            -{mat.totalOut} {mat.unit}
+                          </td>
+                          <td className="p-2.5 text-right font-bold">
+                            <span className={`inline-block px-2 py-0.5 rounded text-xs ${
+                              mat.balance > 0 
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                                : "bg-gray-100 text-gray-600"
+                            }`}>
+                              {mat.balance} {mat.unit}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            {isAlreadyInList ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled
+                                className="h-7 text-[11px] gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed font-medium opacity-100"
+                              >
+                                <Check className="h-3 w-3 text-emerald-600" /> Already in List
+                              </Button>
+                            ) : isZeroBalance ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled
+                                className="h-7 text-[11px] gap-1 bg-gray-100 text-gray-400 cursor-not-allowed"
+                              >
+                                No Balance
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleAddOrderMaterialToStockOut(mat)}
+                                className="h-7 text-[11px] gap-1 border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-900 font-medium"
+                              >
+                                <Plus className="h-3 w-3" /> Add to Stock Out List
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -465,6 +713,17 @@ export default function StockOutForm({ warehouses, items, userContext, initialDa
                              className="text-right"
                              {...form.register(`items.${index}.quantity`, { valueAsNumber: true })} 
                            />
+                           {(() => {
+                             const orderMat = orderMaterialsData?.materials?.find(m => m.itemId === currentItemId);
+                             if (!orderMat) return null;
+                             const itemQty = Number(form.watch(`items.${index}.quantity`) || 0);
+                             const isOver = itemQty > orderMat.balance;
+                             return (
+                               <span className={`text-[10px] block text-right mt-0.5 ${isOver ? "text-red-600 font-semibold" : "text-gray-500"}`}>
+                                 {isOver ? `Exceeds order balance (${orderMat.balance})` : `Order Max: ${orderMat.balance} ${orderMat.unit}`}
+                               </span>
+                             );
+                           })()}
                         </TableCell>
                         <TableCell>
                            <Input 

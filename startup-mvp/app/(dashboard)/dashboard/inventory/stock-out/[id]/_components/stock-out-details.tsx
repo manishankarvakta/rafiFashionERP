@@ -251,6 +251,17 @@ export default function StockOutDetails({ initialData }: StockOutDetailsProps) {
               <span className="text-sm text-muted-foreground print:text-xs">Date:</span>
               <span className="text-sm font-medium print:text-xs">{format(new Date(initialData.date), "dd MMM yyyy")}</span>
             </div>
+            {initialData.workOrder && (
+              <div className="flex justify-between">
+                <span className="text-sm text-muted-foreground print:text-xs">Work Order:</span>
+                <span className="text-sm font-medium print:text-xs text-blue-600">
+                  <Link href={`/dashboard/orders/${initialData.workOrder.id}`} className="hover:underline flex items-center gap-1">
+                    {initialData.workOrder.orderNo}
+                    {initialData.workOrder.client?.name ? ` (${initialData.workOrder.client.name})` : ""}
+                  </Link>
+                </span>
+              </div>
+            )}
             {initialData.voucher && (
               <div className="flex justify-between print:hidden">
                 <span className="text-sm text-muted-foreground">Voucher:</span>

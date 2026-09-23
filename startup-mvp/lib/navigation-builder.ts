@@ -56,6 +56,8 @@ export const MENU_TEMPLATE: MenuItemData[] = [
     icon: "FiDollarSign",
     module: "sales",
     subMenu: [
+      { href: "/dashboard/orders", label: "Work Orders", icon: "FiLayers", module: "sales" },
+      { href: "/dashboard/sales/invoices", label: "Invoices", icon: "FiFileText", module: "sales" },
       { href: "/dashboard/sales", label: "Sales", icon: "FiDollarSign", module: "sales" },
       { href: "/dashboard/sales/pos", label: "POS", icon: "FiShoppingBag", module: "sales" },
       { href: "/dashboard/sales/ecommerce", label: "E-commerce Orders", icon: "FiShoppingBag", module: "sales" },
@@ -150,6 +152,12 @@ export const MENU_TEMPLATE: MenuItemData[] = [
     icon: "FiPackage",
     module: "inventory",
     subMenu: [
+      { 
+        href: "/dashboard/inventory/stock-in", 
+        label: "Stock In", 
+        icon: "FiInbox", 
+        module: "inventory" 
+      },
       { 
         href: "/dashboard/inventory/stock", 
         label: "Stock", 

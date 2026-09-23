@@ -125,6 +125,37 @@ export interface PayrollCalculationSettings {
   /** Fixed working days per month (used when absentDeductionMode = "working"). Default: 26 */
   standardWorkingDays: number;
 
+  // --- Working Hours & Half-Day Rules (Gross Salary Basis) ---
+
+  /** Enable automatic attendance status evaluation based on logged work hours. Default: true */
+  enableWorkHoursThresholds?: boolean;
+
+  /**
+   * Minimum net work hours required for Full Day (PRESENT).
+   * Default: 8.0 hours
+   */
+  minHoursForFullDay?: number;
+
+  /**
+   * Minimum net work hours required for Half Day (HALF_DAY).
+   * Working fewer than this threshold marks the record as ABSENT.
+   * Default: 4.0 hours
+   */
+  minHoursForHalfDay?: number;
+
+  /**
+   * Percentage of Daily Gross Salary paid for a Half Day (0–100%).
+   * Deduction = Daily Gross Rate × (100 - halfDayGrossSalaryPayPercentage)%.
+   * Default: 50% (Deducts 50% of Daily Gross Salary)
+   */
+  halfDayGrossSalaryPayPercentage?: number;
+
+  /**
+   * Explicit calculation basis for Half-Day deduction.
+   * Default: "GROSS"
+   */
+  halfDayCalculationBasis?: "GROSS";
+
   // --- Default Allowances (% of Basic, global fallback) ---
 
   /** Default House Rent Allowance as % of Basic. Default: 0 */
@@ -257,6 +288,11 @@ export function createDefaultPayrollSettings(): PayrollSettings {
       absentDeductionMode: "calendar",
       absentDeductionBasis: "BASIC",
       standardWorkingDays: 26,
+      enableWorkHoursThresholds: true,
+      minHoursForFullDay: 8,
+      minHoursForHalfDay: 4,
+      halfDayGrossSalaryPayPercentage: 50,
+      halfDayCalculationBasis: "GROSS",
       defaultHouseRentPct: 0,
       defaultMedicalPct: 0,
       defaultTransportPct: 0,

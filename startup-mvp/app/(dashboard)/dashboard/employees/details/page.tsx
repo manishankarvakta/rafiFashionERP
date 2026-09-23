@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 import PageGuard from "@/components/permissions/page-guard";
 import { prisma } from "@/lib/prisma";
 import PrintIdCardDialog from "../_components/print-id-card-dialog";
+import PrintEmployeeDetailsDialog from "../_components/print-employee-details-dialog";
 import ExportSingleAttendance from "../_components/export-single-attendance";
 import { serializeDecimalAndDate } from "@/lib/utils/serialization";
 import { auth } from "@/lib/auth";
@@ -99,6 +100,11 @@ export default async function EmployeeDetailsPage({ searchParams }: EmployeeDeta
               </Link>
             </Button>
           )}
+          <PrintEmployeeDetailsDialog
+            employee={serializeDecimalAndDate(employee)}
+            orgInfo={serializeDecimalAndDate(orgInfo)}
+            salaryStructure={salaryStructure}
+          />
           <PrintIdCardDialog
             employee={serializeDecimalAndDate(employee)}
             orgInfo={serializeDecimalAndDate(orgInfo)}
