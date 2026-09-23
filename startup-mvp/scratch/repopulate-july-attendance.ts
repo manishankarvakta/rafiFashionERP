@@ -42,6 +42,7 @@ async function repopulateJulyAttendance() {
     const date = new Date(`${dateStr}T00:00:00.000Z`);
     const isWeekendDay = isConfiguredWeekend(date, weekends);
 
+    // 
     for (const emp of employees) {
       if (isWeekendDay) {
         recordsToCreate.push({

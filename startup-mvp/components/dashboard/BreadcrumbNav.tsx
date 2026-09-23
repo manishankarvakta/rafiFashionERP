@@ -35,6 +35,7 @@ const routeMap: Record<string, string> = {
   "/dashboard/users/edit-user": "Edit User",
   "/dashboard/files": "Files",
   "/dashboard/files/upload": "Upload",
+  "/dashboard/sales/invoices": "Order Invoices",
 };
 
 // Check if a path segment is a dynamic route (e.g., [id])

@@ -3,7 +3,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidateBothPaths } from "@/lib/route-utils-server";
-import { WorkOrderStatus, MaterialInwardSource, OrderType, SaleStatus } from "@prisma/client";
+import { WorkOrderStatus, MaterialInwardSource, OrderType, SaleStatus, StockTransactionType } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { createSaleAccountingVoucher } from "@/app/(dashboard)/dashboard/sales/_actions/sale.action";
 
@@ -480,11 +480,71 @@ export async function addProductionEntry(input: AddProductionEntryInput) {
         },
       });
 
+      // 4. Update Warehouse Finished Goods Stock & Ledger if Ready Product exists and tracks inventory
+      if (order.itemId && Number(input.producedQty) > 0) {
+        const item = await tx.item.findUnique({
+          where: { id: order.itemId },
+          select: { trackInventory: true, name: true },
+        });
+
+        if (item && item.trackInventory) {
+          const defaultWarehouse = await tx.warehouse.findFirst({
+            where: { status: "active", isTrash: false },
+          });
+
+          if (defaultWarehouse) {
+            const existingStock = await tx.stock.findUnique({
+              where: {
+                itemId_warehouseId: {
+                  itemId: order.itemId,
+                  warehouseId: defaultWarehouse.id,
+                },
+              },
+            });
+
+            if (existingStock) {
+              await tx.stock.update({
+                where: { id: existingStock.id },
+                data: {
+                  quantity: { increment: Number(input.producedQty) },
+                  lastUpdated: new Date(),
+                },
+              });
+            } else {
+              await tx.stock.create({
+                data: {
+                  itemId: order.itemId,
+                  warehouseId: defaultWarehouse.id,
+                  quantity: Number(input.producedQty),
+                  reservedQuantity: 0,
+                },
+              });
+            }
+
+            // Record in StockLedger
+            await tx.stockLedger.create({
+              data: {
+                itemId: order.itemId,
+                warehouseId: defaultWarehouse.id,
+                transactionType: StockTransactionType.PRODUCTION,
+                quantity: Number(input.producedQty),
+                referenceType: "WORK_ORDER_OUTPUT",
+                referenceId: entry.id,
+                notes: `Batch output ${entryNo} (+${input.producedQty} pcs) for Work Order ${order.orderNo}`,
+                createdBy: session.user.id,
+              },
+            });
+          }
+        }
+      }
+
       return entry;
     });
 
     revalidateBothPaths(`/dashboard/orders/${input.workOrderId}`);
     revalidateBothPaths("/dashboard/orders");
+    revalidateBothPaths("/dashboard/inventory/stock");
+    revalidateBothPaths("/dashboard/inventory/stock-out");
     return { success: true, entry: serialize(result) };
   } catch (error: any) {
     console.error("addProductionEntry error:", error);
@@ -505,6 +565,55 @@ export async function deleteProductionEntry(entryId: string) {
     const workOrderId = entry.workOrderId;
 
     await prisma.$transaction(async (tx) => {
+      // 1. Revert Warehouse Stock if item tracks inventory
+      const order = await tx.workOrder.findUnique({ where: { id: workOrderId } });
+      if (order?.itemId && Number(entry.producedQty) > 0) {
+        const item = await tx.item.findUnique({
+          where: { id: order.itemId },
+          select: { trackInventory: true },
+        });
+
+        if (item && item.trackInventory) {
+          const defaultWarehouse = await tx.warehouse.findFirst({
+            where: { status: "active", isTrash: false },
+          });
+
+          if (defaultWarehouse) {
+            const existingStock = await tx.stock.findUnique({
+              where: {
+                itemId_warehouseId: {
+                  itemId: order.itemId,
+                  warehouseId: defaultWarehouse.id,
+                },
+              },
+            });
+
+            if (existingStock) {
+              await tx.stock.update({
+                where: { id: existingStock.id },
+                data: {
+                  quantity: { decrement: Number(entry.producedQty) },
+                  lastUpdated: new Date(),
+                },
+              });
+            }
+
+            await tx.stockLedger.create({
+              data: {
+                itemId: order.itemId,
+                warehouseId: defaultWarehouse.id,
+                transactionType: StockTransactionType.ADJUSTMENT,
+                quantity: -Number(entry.producedQty),
+                referenceType: "WORK_ORDER_OUTPUT_DELETE",
+                referenceId: entryId,
+                notes: `Reversed batch output ${entry.entryNo} (-${entry.producedQty} pcs) for Work Order ${order.orderNo}`,
+                createdBy: session.user.id,
+              },
+            });
+          }
+        }
+      }
+
       await tx.workOrderProductionEntry.delete({ where: { id: entryId } });
 
       const allEntries = await tx.workOrderProductionEntry.findMany({
@@ -514,7 +623,6 @@ export async function deleteProductionEntry(entryId: string) {
       const totalProduced = allEntries.reduce((sum, e) => sum + e.producedQty, 0);
       const totalRejected = allEntries.reduce((sum, e) => sum + e.rejectedQty, 0);
 
-      const order = await tx.workOrder.findUnique({ where: { id: workOrderId } });
       let newStatus = order?.productionStatus || WorkOrderStatus.PENDING;
 
       if (totalProduced === 0) {
@@ -535,6 +643,8 @@ export async function deleteProductionEntry(entryId: string) {
 
     revalidateBothPaths(`/dashboard/orders/${workOrderId}`);
     revalidateBothPaths("/dashboard/orders");
+    revalidateBothPaths("/dashboard/inventory/stock");
+    revalidateBothPaths("/dashboard/inventory/stock-out");
     return { success: true };
   } catch (error: any) {
     console.error("deleteProductionEntry error:", error);
@@ -635,27 +745,82 @@ export async function createWorkOrderDelivery(workOrderId: string, input: Create
     const count = await prisma.workOrderDelivery.count();
     const challanNo = `DC-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
-    const delivery = await prisma.workOrderDelivery.create({
-      data: {
-        challanNo,
-        workOrderId,
-        deliveredQty: input.deliveredQty,
-        driverName: input.driverName || null,
-        vehicleNo: input.vehicleNo || null,
-        notes: input.notes || null,
-      },
-    });
-
-    // If fully or partially delivered, update status if appropriate
-    if (newTotal >= order.targetQuantity) {
-      await prisma.workOrder.update({
-        where: { id: workOrderId },
-        data: { productionStatus: WorkOrderStatus.DELIVERED },
+    const delivery = await prisma.$transaction(async (tx) => {
+      const createdDelivery = await tx.workOrderDelivery.create({
+        data: {
+          challanNo,
+          workOrderId,
+          deliveredQty: input.deliveredQty,
+          driverName: input.driverName || null,
+          vehicleNo: input.vehicleNo || null,
+          notes: input.notes || null,
+        },
       });
-    }
+
+      // Update Warehouse Stock (Dispatched Finished Goods)
+      if (order.itemId && Number(input.deliveredQty) > 0) {
+        const item = await tx.item.findUnique({
+          where: { id: order.itemId },
+          select: { trackInventory: true, name: true },
+        });
+
+        if (item && item.trackInventory) {
+          const defaultWarehouse = await tx.warehouse.findFirst({
+            where: { status: "active", isTrash: false },
+          });
+
+          if (defaultWarehouse) {
+            const existingStock = await tx.stock.findUnique({
+              where: {
+                itemId_warehouseId: {
+                  itemId: order.itemId,
+                  warehouseId: defaultWarehouse.id,
+                },
+              },
+            });
+
+            if (existingStock) {
+              await tx.stock.update({
+                where: { id: existingStock.id },
+                data: {
+                  quantity: { decrement: Number(input.deliveredQty) },
+                  lastUpdated: new Date(),
+                },
+              });
+            }
+
+            // Record in StockLedger
+            await tx.stockLedger.create({
+              data: {
+                itemId: order.itemId,
+                warehouseId: defaultWarehouse.id,
+                transactionType: StockTransactionType.OUT,
+                quantity: -Number(input.deliveredQty),
+                referenceType: "DELIVERY_CHALLAN",
+                referenceId: createdDelivery.id,
+                notes: `Dispatched on Delivery Challan ${challanNo} (-${input.deliveredQty} pcs) for Work Order ${order.orderNo}`,
+                createdBy: session.user.id,
+              },
+            });
+          }
+        }
+      }
+
+      // If fully or partially delivered, update status if appropriate
+      if (newTotal >= order.targetQuantity) {
+        await tx.workOrder.update({
+          where: { id: workOrderId },
+          data: { productionStatus: WorkOrderStatus.DELIVERED },
+        });
+      }
+
+      return createdDelivery;
+    });
 
     revalidateBothPaths(`/dashboard/orders/${workOrderId}`);
     revalidateBothPaths("/dashboard/orders");
+    revalidateBothPaths("/dashboard/inventory/stock");
+    revalidateBothPaths("/dashboard/inventory/stock-out");
     return { success: true, delivery: serialize(delivery) };
   } catch (error: any) {
     console.error("createWorkOrderDelivery error:", error);
