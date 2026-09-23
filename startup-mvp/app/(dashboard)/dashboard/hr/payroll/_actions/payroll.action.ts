@@ -536,19 +536,13 @@ export async function generatePayroll(month: number, year: number, options?: Gen
       });
 
       const att = empAttendance.reduce((acc, curr) => {
-<<<<<<< HEAD
         const dayVal = resolveAttendanceDayValues(curr, emp, weekends, monthHolidays);
 
         if (dayVal.status === "ABSENT") {
-          acc.absentDays += 1;
-        } else if (dayVal.status === "HALF_DAY") {
-=======
-        if (curr.status === "ABSENT") {
           acc.fullAbsentDays += 1;
           acc.absentDays += 1;
-        } else if (curr.status === "HALF_DAY") {
+        } else if (dayVal.status === "HALF_DAY") {
           acc.halfDaysCount += 1;
->>>>>>> ratul-exm
           acc.absentDays += 0.5;
         } else if (dayVal.status === "LEAVE") {
           const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
@@ -2055,21 +2049,15 @@ export async function recalculatePayroll(payrollId: string) {
       });
 
       const att = empAttendance.reduce((acc, curr) => {
-<<<<<<< HEAD
         const dayVal = resolveAttendanceDayValues(curr, emp, weekends, monthHolidays);
 
-        if (dayVal.status === "ABSENT") acc.absentDays += 1;
-        else if (dayVal.status === "HALF_DAY") acc.absentDays += 0.5;
-        else if (dayVal.status === "LEAVE") {
-=======
-        if (curr.status === "ABSENT") {
+        if (dayVal.status === "ABSENT") {
           acc.fullAbsentDays += 1;
           acc.absentDays += 1;
-        } else if (curr.status === "HALF_DAY") {
+        } else if (dayVal.status === "HALF_DAY") {
           acc.halfDaysCount += 1;
           acc.absentDays += 0.5;
-        } else if (curr.status === "LEAVE") {
->>>>>>> ratul-exm
+        } else if (dayVal.status === "LEAVE") {
           const isPaid = curr.leaveApplication?.leaveType?.isPaid ?? true;
           if (!isPaid) {
             acc.fullAbsentDays += 1;
