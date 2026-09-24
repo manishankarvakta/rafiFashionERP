@@ -37,6 +37,14 @@ export function getPathPermissionKey(pathname: string): string | null {
     "/dashboard/clients": "peoples.clients",
     "/dashboard/suppliers": "peoples.suppliers",
     "/dashboard/employees": "peoples.employees",
+    // Sales
+    "/dashboard/orders": "sales.orders",
+    "/dashboard/sales/invoices": "sales.invoices",
+    "/dashboard/sales/ecommerce": "sales.ecommerce",
+    "/dashboard/sales/pos": "sales.pos",
+    "/dashboard/sales/coupons": "sales.coupons",
+    "/dashboard/sales/daybook": "sales.daybook",
+    "/dashboard/sales": "sales.sales",
     // Other modules
     "/dashboard/files": "files",
     "/dashboard/notifications": "notifications",

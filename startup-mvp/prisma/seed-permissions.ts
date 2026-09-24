@@ -101,7 +101,10 @@ async function seedPermissions() {
     ...createPermissionsForPages(["notifications"], ["view"]),
     ...createPermissionsForPages(["reports.view", "inventory.stock-movements"], ["view"]),
     // Sales - full access
-    ...createPermissionsForPages(["sales.sales"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
+    ...createPermissionsForPages(
+      ["sales.sales", "sales.orders", "sales.invoices", "sales.ecommerce", "sales.pos", "sales.coupons"],
+      ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently", "print", "export"]
+    ),
     "sales.daybook": {
       navigationVisible: true,
       pageAccess: true,
@@ -212,7 +215,10 @@ async function seedPermissions() {
     // Purchases - full access
     ...createPermissionsForPages(["purchases.purchases"], allStandardOps),
     // Sales - full access
-    ...createPermissionsForPages(["sales.sales"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
+    ...createPermissionsForPages(
+      ["sales.sales", "sales.orders", "sales.invoices", "sales.ecommerce", "sales.pos", "sales.coupons"],
+      ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently", "print", "export"]
+    ),
     // Inventory - full access
     ...createPermissionsForPages(["inventory.stock-out"], ["create", "view", "edit", "approve", "move-to-trash", "delete-permanently"]),
     // Inventory - full access

@@ -175,8 +175,12 @@ export const MODULES: Record<Module, ModuleMetadata> = {
     description: "Sales and point of sale",
     subModules: [
       { id: "orders", label: "Work Orders", path: "/dashboard/orders", module: "sales", permissionKey: "sales.orders" },
+      { id: "invoices", label: "Invoices", path: "/dashboard/sales/invoices", module: "sales", permissionKey: "sales.invoices" },
       { id: "sales", label: "Sales", path: "/dashboard/sales", module: "sales", permissionKey: "sales.sales" },
       { id: "pos", label: "POS", path: "/dashboard/sales/pos", module: "sales", permissionKey: "sales.pos" },
+      { id: "ecommerce", label: "E-commerce Orders", path: "/dashboard/sales/ecommerce", module: "sales", permissionKey: "sales.ecommerce" },
+      { id: "coupons", label: "Coupons", path: "/dashboard/sales/coupons", module: "sales", permissionKey: "sales.coupons" },
+      { id: "daybook", label: "Daybook / closing", path: "/dashboard/sales/daybook", module: "sales", permissionKey: "sales.daybook" },
     ],
   },
   accounts: {
@@ -609,6 +613,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
         operations: ["view", "create", "edit", "approve", "move-to-trash", "delete-permanently"],
       },
       {
+        permissionKey: "sales.invoices",
+        path: "/dashboard/sales/invoices",
+        label: "Invoices",
+        operations: ["view", "create", "edit", "print", "export"],
+      },
+      {
         permissionKey: "sales.sales",
         path: "/dashboard/sales",
         label: "Sales",
@@ -619,6 +629,12 @@ export const NAVIGATION_STRUCTURE: NavigationItem[] = [
         path: "/dashboard/sales/pos",
         label: "POS",
         operations: ["view", "create", "wholesale"],
+      },
+      {
+        permissionKey: "sales.ecommerce",
+        path: "/dashboard/sales/ecommerce",
+        label: "E-commerce Orders",
+        operations: ["view", "create", "edit", "approve", "move-to-trash", "delete-permanently"],
       },
       {
         permissionKey: "sales.coupons",
