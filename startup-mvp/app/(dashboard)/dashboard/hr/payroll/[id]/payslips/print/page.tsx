@@ -145,6 +145,18 @@ export default async function PrintAllPage({ params }: PrintAllPageProps) {
     };
   });
 
+  // Natural numeric sort by Biometric ID (ascending: small to large)
+  resolvedItems.sort((a, b) => {
+    const idA = a.employee?.biometricDeviceId || a.employee?.deviceMappings?.[0]?.deviceUserId || a.employee?.employeeCode || "";
+    const idB = b.employee?.biometricDeviceId || b.employee?.deviceMappings?.[0]?.deviceUserId || b.employee?.employeeCode || "";
+    if (!idA && !idB) return (a.employee?.name || "").localeCompare(b.employee?.name || "");
+    if (!idA) return 1;
+    if (!idB) return -1;
+    const comp = idA.localeCompare(idB, undefined, { numeric: true, sensitivity: "base" });
+    if (comp !== 0) return comp;
+    return (a.employee?.name || "").localeCompare(b.employee?.name || "");
+  });
+
   const orgInfo = await prisma.organization.findFirst({
     where: { status: "active" }
   });
