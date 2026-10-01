@@ -54,6 +54,7 @@ async function repopulateJulyAttendance() {
           checkOut: null,
           isManual: false
         });
+        // 
       } else {
         // Weekday: shift starts at 10:00 AM local (04:00 AM UTC), ends at 07:00 PM local (13:00 UTC)
         const isAbsent = Math.random() < 0.05; // 5% chance of being absent
