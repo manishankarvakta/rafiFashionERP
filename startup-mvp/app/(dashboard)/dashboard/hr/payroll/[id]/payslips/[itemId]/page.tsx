@@ -46,6 +46,10 @@ export default async function PayslipPage({ params }: PayslipPageProps) {
             include: {
               salaryStructurePolicy: true
             }
+          },
+          deviceMappings: {
+            where: { isActive: true },
+            select: { deviceUserId: true }
           }
         }
       }

@@ -38,6 +38,10 @@ export default async function PrintAllPage({ params }: PrintAllPageProps) {
                 include: {
                   salaryStructurePolicy: true
                 }
+              },
+              deviceMappings: {
+                where: { isActive: true },
+                select: { deviceUserId: true }
               }
             }
           }
@@ -52,6 +56,26 @@ export default async function PrintAllPage({ params }: PrintAllPageProps) {
   }
 
   const { calculateSalaryBreakdown } = await import("@/lib/hr-payroll/policy-calculation");
+
+  // Fetch monthly attendance records for all employees in this payroll run
+  const startDate = new Date(payroll.year, payroll.month - 1, 1);
+  const endDate = new Date(payroll.year, payroll.month, 0);
+  const employeeIds = payroll.items.map(item => item.employeeId);
+
+  const attendances = await prisma.attendance.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      date: {
+        gte: startDate,
+        lte: endDate
+      }
+    },
+    select: {
+      employeeId: true,
+      status: true,
+      otHours: true
+    }
+  });
 
   const resolvedItems = payroll.items.map(item => {
     const basic = Number(item.basic);
@@ -84,6 +108,14 @@ export default async function PrintAllPage({ params }: PrintAllPageProps) {
       resFoodAllowance = breakdown.food;
     }
 
+    const empAttendances = attendances.filter(a => a.employeeId === item.employeeId);
+    const totalOtHours = empAttendances.reduce((acc, curr) => acc + Number(curr.otHours || 0), 0);
+    const totalWorkingDays = empAttendances.filter(
+      a => a.status === "PRESENT" || a.status === "LATE" || a.status === "HALF_DAY"
+    ).length;
+    const totalAbsentDays = empAttendances.filter(a => a.status === "ABSENT").length;
+    const halfDays = empAttendances.filter(a => a.status === "HALF_DAY").length;
+
     return {
       ...item,
       basic: resBasic,
@@ -106,6 +138,10 @@ export default async function PrintAllPage({ params }: PrintAllPageProps) {
       otherAllowance: Number(item.otherAllowance),
       lateDeduction: Number(item.lateDeduction),
       otherDeduction: Number(item.otherDeduction),
+      totalOtHours,
+      totalWorkingDays,
+      totalAbsentDays,
+      halfDays,
     };
   });
 

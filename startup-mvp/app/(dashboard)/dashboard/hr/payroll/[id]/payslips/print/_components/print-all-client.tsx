@@ -131,6 +131,12 @@ export default function PrintAllClient({ payroll, orgInfo }: PrintAllClientProps
               const bonusAndOth = Number(item.bonus || 0) + Number(item.otherAllowance || 0);
               const taxAndPf = Number(item.taxDeduction || 0) + Number(item.pfDeduction || 0);
 
+              const biometricId =
+                item.employee.biometricDeviceId ||
+                item.employee.deviceMappings?.[0]?.deviceUserId ||
+                item.employee.employeeCode ||
+                "N/A";
+
               return (
                 <div
                   key={item.id}
@@ -149,8 +155,8 @@ export default function PrintAllClient({ payroll, orgInfo }: PrintAllClientProps
                       <div className="border-t border-gray-200 my-1"></div>
 
                       <div className="grid grid-cols-2 gap-y-0.5 text-[9px] mt-1 bg-slate-50 p-1.5 rounded">
-                        <div className="font-semibold">Code:</div>
-                        <div className="font-mono text-right truncate">{item.employee.employeeCode || "N/A"}</div>
+                        <div className="font-semibold">Biometric ID:</div>
+                        <div className="font-mono text-right truncate">{biometricId}</div>
                         <div className="font-semibold">Name:</div>
                         <div className="text-right truncate">{item.employee.name}</div>
                         <div className="font-semibold">Designation:</div>
@@ -216,8 +222,8 @@ export default function PrintAllClient({ payroll, orgInfo }: PrintAllClientProps
                       </div>
 
                       <div className="grid grid-cols-4 gap-x-2 gap-y-0.5 text-[9px] my-1.5 bg-slate-50/50 p-1.5 rounded border border-slate-100">
-                        <span className="font-semibold text-gray-500">Employee Code:</span>
-                        <span className="font-mono font-medium">{item.employee.employeeCode || "N/A"}</span>
+                        <span className="font-semibold text-gray-500">Biometric ID:</span>
+                        <span className="font-mono font-medium">{biometricId}</span>
                         <span className="font-semibold text-gray-500">Employee Name:</span>
                         <span className="font-medium truncate">{item.employee.name}</span>
                         <span className="font-semibold text-gray-500">Department:</span>
@@ -229,31 +235,21 @@ export default function PrintAllClient({ payroll, orgInfo }: PrintAllClientProps
                       {/* Main Financial breakdown - Grid style */}
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[9px]">
                         {/* Earnings Panel */}
-                        <div className="space-y-0.5 border-r pr-2 border-gray-100">
-                          <div className="font-bold text-gray-700 uppercase tracking-wide border-b pb-0.5 text-[8px]">Earnings</div>
-                          <div className="flex justify-between">
-                            <span>Base Gross Salary</span>
-                            <span>{formatCurrency(baseGrossSalary)}</span>
-                          </div>
-                          <div className="flex justify-between text-gray-400 text-[8px] pl-1.5">
-                            <span>• Basic (55%):</span>
-                            <span>{formatCurrency(item.basic)}</span>
-                          </div>
-                          <div className="flex justify-between text-gray-400 text-[8px] pl-1.5">
-                            <span>• House Rent (26%):</span>
-                            <span>{formatCurrency(item.houseRent)}</span>
-                          </div>
-                          <div className="flex justify-between text-gray-400 text-[8px] pl-1.5">
-                            <span>• Other Allowances:</span>
-                            <span>{formatCurrency(item.medical + item.transport + item.foodAllowance)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Overtime Pay (OT)</span>
-                            <span>{formatCurrency(item.otAmount)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Other Bills/Bonus</span>
-                            <span>{formatCurrency(item.tiffinAllowance + item.nightAllowance + item.holidayAllowance + bonusAndOth)}</span>
+                        <div className="space-y-0.5 border-r pr-2 border-gray-100 flex flex-col justify-between">
+                          <div>
+                            <div className="font-bold text-gray-700 uppercase tracking-wide border-b pb-0.5 text-[8px]">Earnings</div>
+                            <div className="flex justify-between">
+                              <span>Base Gross Salary</span>
+                              <span>{formatCurrency(baseGrossSalary)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Overtime Pay (OT)</span>
+                              <span>{formatCurrency(item.otAmount)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Other Bills/Bonus</span>
+                              <span>{formatCurrency(item.tiffinAllowance + item.nightAllowance + item.holidayAllowance + bonusAndOth)}</span>
+                            </div>
                           </div>
                           <div className="flex justify-between font-bold text-emerald-800 border-t pt-0.5 border-gray-100">
                             <span>Total Earnings</span>
@@ -266,10 +262,6 @@ export default function PrintAllClient({ payroll, orgInfo }: PrintAllClientProps
                           <div>
                             <div className="font-bold text-gray-700 uppercase tracking-wide border-b pb-0.5 text-[8px]">Deductions</div>
                             <div className="flex justify-between">
-                              <span>Absent Deduction</span>
-                              <span>{formatCurrency(item.absentDeduction)}</span>
-                            </div>
-                            <div className="flex justify-between">
                               <span>Late Deduction</span>
                               <span>{formatCurrency(item.lateDeduction)}</span>
                             </div>
@@ -277,20 +269,36 @@ export default function PrintAllClient({ payroll, orgInfo }: PrintAllClientProps
                               <span>Loan Deduction</span>
                               <span>{formatCurrency(item.loanDeduction)}</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span>Tax & PF</span>
-                              <span>{formatCurrency(taxAndPf)}</span>
-                            </div>
                             {Number(item.otherDeduction) > 0 && (
                               <div className="flex justify-between text-red-600">
                                 <span>Other Deduction</span>
                                 <span>{formatCurrency(item.otherDeduction)}</span>
                               </div>
                             )}
-                          </div>
-                          <div className="flex justify-between font-bold text-red-800 border-t pt-0.5 border-gray-100">
-                            <span>Total Deductions</span>
-                            <span>{formatCurrency(item.totalDeduction)}</span>
+                            <div className="flex justify-between font-bold text-red-800 border-t pt-0.5 border-gray-100">
+                              <span>Total Deductions</span>
+                              <span>{formatCurrency(item.totalDeduction)}</span>
+                            </div>
+
+                            {/* Attendance & Overtime Summary */}
+                            <div className="border-t border-dashed border-gray-200 mt-1 pt-1 space-y-0.5 text-[8.5px] text-gray-600">
+                              <div className="flex justify-between">
+                                <span>Total OT Time:</span>
+                                <span className="font-mono font-medium text-gray-800">{item.totalOtHours || 0} hrs</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Total Working days:</span>
+                                <span className="font-mono font-medium text-gray-800">{item.totalWorkingDays ?? 0}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Total Absent Days:</span>
+                                <span className="font-mono font-medium text-red-600">{item.totalAbsentDays ?? 0}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Half Days:</span>
+                                <span className="font-mono font-medium text-amber-600">{item.halfDays ?? 0}</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>

@@ -53,8 +53,13 @@ export default function PayslipClient({ payrollItem, attendanceSummary, orgInfo 
         {/* Employee Info Grid */}
         <div className="grid grid-cols-2 gap-x-12 gap-y-4 mb-8 text-sm">
           <div className="flex justify-between border-b border-gray-200 pb-1">
-            <span className="font-semibold text-gray-600">Employee Code:</span>
-            <span className="text-gray-900">{payrollItem.employee.employeeCode || "N/A"}</span>
+            <span className="font-semibold text-gray-600">Biometric ID:</span>
+            <span className="text-gray-900 font-mono">
+              {payrollItem.employee.biometricDeviceId ||
+                payrollItem.employee.deviceMappings?.[0]?.deviceUserId ||
+                payrollItem.employee.employeeCode ||
+                "N/A"}
+            </span>
           </div>
           <div className="flex justify-between border-b border-gray-200 pb-1">
             <span className="font-semibold text-gray-600">Employee Name:</span>
